@@ -8,17 +8,5 @@
  *)
 
 open! IStd
-module F = Format
-module L = Logging
 
-type astate = unit
-
-let ( <= ) ~lhs:_ ~rhs:_ = assert false
-
-let join _a _b = assert false
-
-let widen ~prev:_ ~next:_ ~num_iters:_ = assert false
-
-let pp fmt () = F.fprintf fmt "(nothing)"
-
-let initial = ()
+val checker : Callbacks.proc_callback_t

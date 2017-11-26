@@ -42,4 +42,82 @@ public class Leaks {
     stream2.close();
   }
 
+  /* if/then/else
+  void mayLeakBad(Boolean b) throws IOException, FileNotFoundException {
+    FileInputStream stream;
+    if (b) {
+      stream = new FileInputStream("file.txt");
+    }
+  }
+
+  void choiceCloseOk(Boolean b) throws IOException, FileNotFoundException {
+    FileInputStream stream = new FileInputStream("file.txt");
+    if (b) {
+      stream.close();
+    } else {
+      stream.close();
+    }
+  }
+  */
+
+  /* loops
+  void openCloseLoopOk(String[] files) throws IOException, FileNotFoundException {
+    FileInputStream stream;
+    for (int i = 0; i < files.length; i++) {
+      String file = files[i];
+      stream = new FileInputStream(file);
+      stream.close();
+    }
+  }
+
+  void openAllCloseAllLoopOk(String[] files) throws IOException, FileNotFoundException {
+    FileInputStream[] streams = new FileInputStream[files.length];
+    for (int i = 0; i < files.length; i++) {
+      streams[i] = new FileInputStream(files[i]);
+    }
+    for (int i = 0; i < files.length; i++) {
+      streams[i].close();
+    }
+  }
+  */
+
+  /* Interprocedural
+  FileInputStream returnResourceOk() throws IOException, FileNotFoundException {
+    return new FileInputStream("file.txt");
+  }
+
+  FileInputStream returnResourceWrapperOk() throws IOException, FileNotFoundException {
+    return returnResourceOk();
+  }
+
+  void returnResourceThenCloseOk() throws IOException, FileNotFoundException {
+    returnResourceWrapperOk().close();
+  }
+
+  int returnResourceThenLeakBad() throws IOException, FileNotFoundException {
+    returnResourceWrapperOk(); // warning
+    return 0;
+  }
+  */
+
+  /* access paths
+  void acquireTwoThenReleaseOneTwiceBad() throws IOException, FileNotFoundException {
+    FileInputStream stream1 = new FileInputStream("file.txt");
+    FileInputStream stream2 = new FileInputStream("file.txt");
+    stream1.close();
+    stream1.close();
+  }
+  */
+
+  /* aliasing
+  void releaseBothOk(FileInputStream stream1, FileInputStream stream2) throws IOException {
+    if (stream1 == stream2) {
+      stream1.close();
+    } else {
+      stream1.close();
+      stream2.close();
+    }
+  }
+  */
+
 }

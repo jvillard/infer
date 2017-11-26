@@ -1,15 +1,22 @@
-# Infer [![Build Status](https://travis-ci.org/facebook/infer.svg?branch=master)](https://travis-ci.org/facebook/infer)
+# Lab for Infer
 
-[Infer](http://fbinfer.com/) is a static analysis tool for Java,
-Objective-C and C, written in [OCaml](https://ocaml.org/).
+## Follow along the lab
 
+```
+cd Desktop/infer
+git remote add sbmf https://github.com/jvillard/infer.git
+git fetch sbmf lab
+git checkout -b lab sbmf/lab
+export BUILD_MODE=default
+./build-infer.sh java
+make devsetup
+```
+
+See [infer/src/labs/README.md](./infer/src/labs/README.md) for more instructions.
 
 ## Installation
 
-Read our [Getting
-Started](http://fbinfer.com/docs/getting-started.html) page for
-details on how to install packaged versions of Infer. To build Infer
-from source, see [INSTALL.md](./INSTALL.md).
+To build Infer from source, see [INSTALL.md](./INSTALL.md).
 
 ## Contributing
 

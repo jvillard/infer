@@ -349,7 +349,7 @@ type payload =
   ; crashcontext_frame: Stacktree_t.stacktree option
         (** Proc location and blame_range info for crashcontext analysis *)
   ; quandary: QuandarySummary.t option
-  ; resources: ResourceLeakDomain.summary option
+  ; resources: ResourceLeakDomain.astate option
   ; siof: SiofDomain.astate option
   ; racerd: RacerDDomain.summary option
   ; buffer_overrun: BufferOverrunDomain.Summary.t option
@@ -494,6 +494,7 @@ let pp_payload pe fmt
     ; racerd
     ; buffer_overrun
     ; annot_map
+    ; resources
     ; uninit } =
   let pp_opt prefix pp fmt = function
     | Some x ->
@@ -501,7 +502,7 @@ let pp_payload pe fmt
     | None ->
         ()
   in
-  F.fprintf fmt "%a%a%a%a%a%a%a%a%a@\n"
+  F.fprintf fmt "%a%a%a%a%a%a%a%a%a%a@\n"
     (pp_opt "PrePosts" (pp_specs pe))
     (Option.map ~f:NormSpec.tospecs preposts)
     (pp_opt "TypeState" (TypeState.pp TypeState.unit_ext))
@@ -518,6 +519,8 @@ let pp_payload pe fmt
     annot_map
     (pp_opt "Uninitialised" UninitDomain.pp_summary)
     uninit
+    (pp_opt "Lab" ResourceLeakDomain.pp)
+    resources
 
 
 let pp_summary_text fmt summary =
