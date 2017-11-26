@@ -8,11 +8,10 @@
 open! IStd
 module F = Format
 module L = Logging
-module Domain = ResourceLeakDomain
 
 (* Boilerplate to write/read our summaries alongside the summaries of other analyzers *)
 module Payload = SummaryPayload.Make (struct
-  type t = Domain.t
+  type t = ResourceLeakDomain.t
 
   let update_payloads resources_payload (payloads : Payloads.t) =
     {payloads with resources= Some resources_payload}
@@ -21,61 +20,49 @@ module Payload = SummaryPayload.Make (struct
   let of_payloads (payloads : Payloads.t) = payloads.resources
 end)
 
-type extras = FormalMap.t
-
 module TransferFunctions (CFG : ProcCfg.S) = struct
   module CFG = CFG
-  module Domain = Domain
+  module Domain = ResourceLeakDomain
 
-  type nonrec extras = extras
+  type extras = unit
 
-  (* Take an abstract state and instruction, produce a new abstract state *)
-  let exec_instr (astate : Domain.t) {ProcData.pdesc; tenv} _ (instr : HilInstr.t) =
-    let is_closeable procname tenv =
-      match procname with
-      | Typ.Procname.Java java_procname ->
-          let is_closable_interface typename _ =
-            match Typ.Name.name typename with
-            | "java.io.AutoCloseable" | "java.io.Closeable" ->
-                true
-            | _ ->
-                false
-          in
-          PatternMatch.supertype_exists tenv is_closable_interface
-            (Typ.Name.Java.from_string (Typ.Procname.Java.get_class_name java_procname))
+  let is_closeable_typename tenv typename =
+    let is_closable_interface typename _ =
+      match Typ.Name.name typename with
+      | "java.io.AutoCloseable" | "java.io.Closeable" ->
+          true
       | _ ->
           false
     in
+    PatternMatch.supertype_exists tenv is_closable_interface typename
+
+
+  let is_closeable_procname tenv procname =
+    match procname with
+    | Typ.Procname.Java java_procname ->
+        is_closeable_typename tenv
+          (Typ.Name.Java.from_string (Typ.Procname.Java.get_class_name java_procname))
+    | _ ->
+        false
+
+
+  let _acquires_resource tenv procname =
     (* We assume all constructors of a subclass of Closeable acquire a resource *)
-    let acquires_resource procname tenv =
-      Typ.Procname.is_constructor procname && is_closeable procname tenv
-    in
+    Typ.Procname.is_constructor procname && is_closeable_procname tenv procname
+
+
+  let _releases_resource tenv procname =
     (* We assume the close method of a Closeable releases all of its resources *)
-    let releases_resource procname tenv =
-      match Typ.Procname.get_method procname with
-      | "close" ->
-          is_closeable procname tenv
-      | _ ->
-          false
-    in
+    String.equal "close" (Typ.Procname.get_method procname) && is_closeable_procname tenv procname
+
+
+  (** Take an abstract state and instruction, produce a new abstract state *)
+  let exec_instr (astate : ResourceLeakDomain.t) {ProcData.pdesc= _; tenv= _} _
+      (instr : HilInstr.t) =
     match instr with
-    | Call (_return_opt, Direct callee_procname, _actuals, _, _loc) -> (
+    | Call (_return_opt, Direct _callee_procname, _actuals, _, _loc) ->
         (* function call [return_opt] := invoke [callee_procname]([actuals]) *)
-        (* 1(e) *)
-        let astate' =
-          if acquires_resource callee_procname tenv then astate + 1 (* 2(a) *)
-          else if releases_resource callee_procname tenv then astate - 1 (* 2(a) *)
-          else astate
-        in
-        match Payload.read pdesc callee_procname with
-        | Some _summary ->
-            (* Looked up the summary for callee_procname... do something with it *)
-            (* 4(a) *)
-            (* 5(b) *)
-            astate'
-        | None ->
-            (* No summary for callee_procname; it's native code or missing for some reason *)
-            astate' )
+        astate
     | Assign (_lhs_access_path, _rhs_exp, _loc) ->
         (* an assignment [lhs_access_path] := [rhs_exp] *)
         astate
@@ -99,27 +86,16 @@ module CFG = ProcCfg.Normal
 (* Create an intraprocedural abstract interpreter from the transfer functions we defined *)
 module Analyzer = LowerHil.MakeAbstractInterpreter (TransferFunctions (CFG))
 
+(** Report an error when we have acquired more resources than we have released *)
+let report_if_leak _post _summary (_proc_data : unit ProcData.t) = ()
+
 (* Callback for invoking the checker from the outside--registered in RegisterCheckers *)
 let checker {Callbacks.summary; proc_desc; tenv} : Summary.t =
-  (* Report an error when we have acquired more resources than we have released *)
-  let report leak_count (proc_data : extras ProcData.t) =
-    if leak_count > 0 (* 2(a) *) then
-      let last_loc = Procdesc.Node.get_loc (Procdesc.get_exit_node proc_data.pdesc) in
-      let message = F.asprintf "Leaked %d resource(s)" leak_count in
-      Reporting.log_error summary ~loc:last_loc IssueType.resource_leak message
-  in
-  (* Convert the abstract state to a summary. for now, just the identity function *)
-  let convert_to_summary (post : Domain.t) : Domain.summary =
-    (* 4(a) *)
-    post
-  in
-  let extras = FormalMap.make proc_desc in
-  let proc_data = ProcData.make proc_desc tenv extras in
+  let proc_data = ProcData.make proc_desc tenv () in
   match Analyzer.compute_post proc_data ~initial:ResourceLeakDomain.initial with
   | Some post ->
-      (* 1(f) *)
-      report post proc_data ;
-      Payload.update_summary (convert_to_summary post) summary
+      report_if_leak post summary proc_data ;
+      Payload.update_summary post summary
   | None ->
       L.(die InternalError)
         "Analyzer failed to compute post for %a" Typ.Procname.pp

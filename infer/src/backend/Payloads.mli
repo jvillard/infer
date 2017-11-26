@@ -19,7 +19,7 @@ type t =
   ; purity: PurityDomain.summary option
   ; quandary: QuandarySummary.t option
   ; racerd: RacerDDomain.summary option
-  ; resources: ResourceLeakDomain.summary option
+  ; resources: ResourceLeakDomain.t option
   ; siof: SiofDomain.Summary.t option
   ; starvation: StarvationDomain.summary option
   ; typestate: TypeState.t option
