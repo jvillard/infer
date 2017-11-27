@@ -58,7 +58,6 @@ public class Leaks {
     }
   }
 
-  /* loops
   void openCloseLoopOk(String[] files) throws IOException, FileNotFoundException {
     FileInputStream stream;
     for (int i = 0; i < files.length; i++) {
@@ -77,7 +76,6 @@ public class Leaks {
       streams[i].close();
     }
   }
-  */
 
   /* Interprocedural
   FileInputStream returnResourceOk() throws IOException, FileNotFoundException {
