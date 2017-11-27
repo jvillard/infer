@@ -12,7 +12,7 @@ type t = int
 
 let ( <= ) ~lhs ~rhs = lhs <= rhs
 
-let join _a _b = assert false
+let join a b = max a b
 
 let widen ~prev:_ ~next:_ ~num_iters:_ = assert false
 
