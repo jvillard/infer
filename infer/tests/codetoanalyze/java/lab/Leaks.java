@@ -42,7 +42,6 @@ public class Leaks {
     stream2.close();
   }
 
-  /* if/then/else
   void mayLeakBad(Boolean b) throws IOException, FileNotFoundException {
     FileInputStream stream;
     if (b) {
@@ -58,7 +57,6 @@ public class Leaks {
       stream.close();
     }
   }
-  */
 
   /* loops
   void openCloseLoopOk(String[] files) throws IOException, FileNotFoundException {
