@@ -12,3 +12,9 @@ open! IStd
 include AbstractDomain.S
 
 val initial : astate
+
+val acquire_resource : astate -> astate
+
+val release_resource : astate -> astate
+
+val has_leak : astate -> bool

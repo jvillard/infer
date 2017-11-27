@@ -11,14 +11,20 @@ open! IStd
 module F = Format
 module L = Logging
 
-type astate = unit
+type astate = int
 
-let ( <= ) ~lhs:_ ~rhs:_ = assert false
+let ( <= ) ~lhs ~rhs = lhs <= rhs
 
 let join _a _b = assert false
 
 let widen ~prev:_ ~next:_ ~num_iters:_ = assert false
 
-let pp fmt () = F.fprintf fmt "(nothing)"
+let pp fmt astate = F.fprintf fmt "%d" astate
 
-let initial = ()
+let initial = 0
+
+let acquire_resource held = held + 1
+
+let release_resource held = held - 1
+
+let has_leak held = held > 0
