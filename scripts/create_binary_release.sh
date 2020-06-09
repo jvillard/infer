@@ -73,4 +73,5 @@ fi
 tar cJf "$RELEASE_TARBALL" "$RELEASE_NAME"
 rm -fr "$RELEASE_NAME"
 
-echo "$ROOT_DIR/$RELEASE_NAME"
+# special GitHub sauce for later steps to find the tarball
+echo "::set-output name=release_tarball::$RELEASE_TARBALL"

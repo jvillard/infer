@@ -1,0 +1,67 @@
+on:
+  push:
+    tags:
+    - 'v[0-9.]+' # tags that look like release numbers, eg v1.0.0
+
+name: Create Binary Release
+
+jobs:
+  build:
+    name: Create Binary Release
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+        ocaml-version:
+          - 4.09.1
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Use OCaml ${{ matrix.ocaml-version }}
+        uses: avsm/setup-ocaml@v1
+        with:
+          ocaml-version: ${{ matrix.ocaml-version }}
+
+      - name: Restore opam cache
+        uses: actions/cache@v2
+        with:
+          path: ${HOME}/.opam
+          key: ${{ runner.os }}-${{ hashFiles('opam.locked') }}
+
+      - name: Install Required Brew Packages for MacOS
+        run: brew install pkg-config automake
+        if: runner.os == 'macOS'
+
+      - name: Build release tarball for version ${{ github.ref }}
+        id: build_release_tarball
+        run:
+          ./scripts/create_binary_release.sh "$(echo ${{ github.ref }} | rev | cut -d / -f 1 | rev)"
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: true
+          prerelease: false
+
+      - name: Upload Release Asset
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./${{ steps.build_release_tarball.outputs.release_tarball}}
+          asset_name: ${{ steps.build_release_tarball.outputs.release_tarball}}
