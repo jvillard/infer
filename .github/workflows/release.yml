@@ -45,13 +45,16 @@ jobs:
             libmpfr-dev \
             libsqlite3-dev \
             m4 \
+            opam \
             perl \
             pkg-config \
             zlib1g-dev
         if: runner.os == 'Linux'
 
       - name: Install Required Brew Packages for MacOS
-        run: brew install pkg-config automake
+        run: |
+          brew install autoconf automake cmake opam pkg-config sqlite gmp mpfr
+          brew cask install java
         if: runner.os == 'macOS'
 
       - name: Build release tarball for version ${{ github.ref }}
