@@ -1,7 +1,7 @@
 on:
   push:
     tags:
-    - 'v[0-9.]+' # tags that look like release numbers, eg v1.0.0
+    - 'v*' # tags that look like release numbers, eg v1.0.0
 
 name: Create Binary Release
 
