@@ -36,6 +36,20 @@ jobs:
           path: ${HOME}/.opam
           key: ${{ runner.os }}-${{ hashFiles('opam.locked') }}
 
+      - name: Install Required Ubuntu Packages
+        run: |
+          sudo apt-get install --yes --no-install-recommends \
+            autoconf \
+            debianutils \
+            libgmp-dev \
+            libmpfr-dev \
+            libsqlite3-dev \
+            m4 \
+            perl \
+            pkg-config \
+            zlib1g-dev
+        if: runner.os == 'Linux'
+
       - name: Install Required Brew Packages for MacOS
         run: brew install pkg-config automake
         if: runner.os == 'macOS'
