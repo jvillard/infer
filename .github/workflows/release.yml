@@ -15,7 +15,7 @@ jobs:
           - macos-latest
           - ubuntu-latest
         ocaml-version:
-          - 4.09.1
+          - ocaml-variants.4.09.1+flambda
 
     runs-on: ${{ matrix.os }}
 
@@ -36,31 +36,26 @@ jobs:
           path: ${HOME}/.opam
           key: ${{ runner.os }}-${{ hashFiles('opam.locked') }}
 
-      - name: Install Required Ubuntu Packages
-        run: |
-          sudo apt-get install --yes --no-install-recommends \
-            autoconf \
-            debianutils \
-            libgmp-dev \
-            libmpfr-dev \
-            libsqlite3-dev \
-            m4 \
-            opam \
-            perl \
-            pkg-config \
-            zlib1g-dev
-        if: runner.os == 'Linux'
-
       - name: Install Required Brew Packages for MacOS
-        run: |
-          brew install autoconf automake cmake opam pkg-config sqlite gmp mpfr
-          brew cask install java
+        run: brew install pkg-config automake
         if: runner.os == 'macOS'
+
+      # ensure infer isn't installed in this switch, then deal with dependencies
+      - run: opam remove infer || true
+
+      - run: opam update --upgrade
+
+      - run: opam pin add --no-action infer .
+
+      - run: opam depext --update infer;
 
       - name: Build release tarball for version ${{ github.ref }}
         id: build_release_tarball
         run:
           ./scripts/create_binary_release.sh "$(echo ${{ github.ref }} | rev | cut -d / -f 1 | rev)"
+        env:
+          INFER_OPAM_SWITCH: ocaml-variants.4.09.1+flambda
+          INFER_OPAM_COMPILER: ocaml-variants.4.09.1+flambda
 
       - name: Create Release
         id: create_release
@@ -82,3 +77,4 @@ jobs:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./${{ steps.build_release_tarball.outputs.release_tarball}}
           asset_name: ${{ steps.build_release_tarball.outputs.release_tarball}}
+          asset_content_type: application/x-gtar
