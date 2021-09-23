@@ -23,6 +23,8 @@ let report_topl_errors proc_desc err_log summary =
   List.iter ~f summary
 
 
+let () = ""
+
 module PulseTransferFunctions = struct
   module CFG = ProcCfg.Normal
   module Domain = AbstractDomain.PairDisjunct (ExecutionDomain) (PathContext)

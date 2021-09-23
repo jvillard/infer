@@ -65,6 +65,7 @@ jobs:
 
       - name: Install Required Apt Packages for Ubuntu
         run: |
+          false
           sudo apt install libmpfr-dev libsqlite3-dev ninja-build
           sudo apt clean
         if: runner.os == 'Linux'
