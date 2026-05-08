@@ -1160,7 +1160,8 @@ end = struct
           | Some l -> (
             match LinArith.get_as_const l with
             | None ->
-                (* OPTIM: don't make the term bigger *) VarSubst v_canon
+                LinSubst l
+            (*                 (* OPTIM: don't make the term bigger *) VarSubst v_canon *)
             | Some q ->
                 (* replace vars by constants when available to possibly trigger further
                      simplifications in atoms. This is not actually needed for [term_eqs]. *)
@@ -1692,6 +1693,7 @@ end = struct
                           match subst_target_x with
                           | VarSubst v ->
                               Term.VarSubst (get_repr phi v :> Var.t)
+                          (* TODO: should renormalize in LinSubst too *)
                           | _ ->
                               subst_target_x
                         in
