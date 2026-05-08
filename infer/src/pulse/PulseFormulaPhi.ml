@@ -1179,6 +1179,7 @@ end = struct
         new_eqs
 
 
+  (*
   let base_rec_fuel = 10_000
 
   let rec_fuel = Stack.create ()
@@ -1204,15 +1205,13 @@ end = struct
   let progress x =
     Stack.pop rec_fuel |> ignore ;
     x
+*)
 
-
-  (*
   let reset_rec_fuel () = ()
 
   let decr_rec_fuel _ = ()
 
   let progress x = x
-*)
 
   (** add [l1 = l2] to [phi.linear_eqs] and resolves consequences of that new fact
 
@@ -1240,18 +1239,24 @@ end = struct
             else Sat (phi, new_eqs)
           in
           match Var.Map.find_opt v phi.linear_eqs with
-          | None ->
+          | None -> (
               (* add to the [term_eqs] relation only when we also add to [linear_eqs] *)
               let* phi, new_eqs =
                 solve_normalized_term_eq_no_lin ~fuel new_eqs (Term.Linear l) v phi
               in
               (* the rep might be changed by [solve_normalized_term_eq_no_lin] *)
               let v = (get_repr phi v :> Var.t) in
+              let l = normalize_linear phi l in
               let new_eqs = add_lin_eq_to_new_eqs v l new_eqs in
-              (* this can break the invariant that variables in the domain of [linear_eqs] do not
+              LinArith.solve_eq l1 l2
+              >>= function
+              | None ->
+                  Sat (phi, new_eqs) |> progress
+              | Some (v, l) ->
+                  (* this can break the invariant that variables in the domain of [linear_eqs] do not
                    appear in the range of [linear_eqs], restore it *)
-              add_linear_eq_and_solve_new_eq_opt ~fuel new_eqs v l phi
-              >>= propagate_linear_eq ~fuel v l |> progress
+                  add_linear_eq_and_solve_new_eq_opt ~fuel new_eqs v l phi
+                  >>= propagate_linear_eq ~fuel v l |> progress )
           | Some l' when not (LinArith.equal l l') ->
               (* This is the only step that consumes fuel: discovering an equality [l = l']: because we
                    do not record these anywhere (except when their consequence can be recorded as [y =

@@ -508,9 +508,13 @@ let%test_module "non-linear simplifications" =
         {|
         Formula:
           conditions: (empty)
-          phi: var_eqs: w=v7=v8=v9=v10 && linear_eqs: w = 0 && term_eqs: 0=w∧(x×z)=v6 && intervals: w=0
+          phi: var_eqs: w=v7=v8=v9=v10
+               && linear_eqs: w = 0 ∧ v8 = 0 ∧ v9 = 0 ∧ v10 = 0
+               && term_eqs: 0=w∧(x×z)=v6
+               && intervals: w=0
         Result: changed
-          conditions: (empty) phi: term_eqs: 0=w|}]
+          conditions: (empty) phi: term_eqs: 0=w
+        |}]
 
 
     let%expect_test "constant propagation: bitshift" =
@@ -667,7 +671,7 @@ let%test_module "conjunctive normal form" =
         {|
         conditions: (empty)
         phi: var_eqs: x=v6 ∧ v7=v8
-             && linear_eqs: x = 0 ∧ v7 = 1
+             && linear_eqs: x = 0 ∧ v6 = 0 ∧ v7 = 1
              && term_eqs: 0=x∧1=v7∧(y≠0)=v7
              && intervals: x=0 ∧ v7=1
              && atoms: {y ≠ 0}
@@ -679,13 +683,13 @@ let%test_module "conjunctive normal form" =
       [%expect
         {|
         conditions: (empty)
-        phi: var_eqs: x=v6=v7=v8=v9=v10 && linear_eqs: x = 0 && term_eqs: 0=x && intervals: x=0
+        phi: var_eqs: x=v6=v7=v8=v9=v10 && linear_eqs: x = 0 ∧ v9 = 0 && term_eqs: 0=x && intervals: x=0
         |}]
 
 
     let%expect_test "UNSAT: ¬ (x = 0 ∨ x > 0 ∨ x < 0)" =
       test (or_ (eq x (i 0)) (or_ (gt x (i 0)) (lt x (i 0))) = i 0) ;
-      [%expect {|UNSAT: UNSAT atom according to eval_const_shallow: 0 ≠ 0|}]
+      [%expect {| UNSAT: -1≥0 is false |}]
 
 
     let%expect_test _ =
