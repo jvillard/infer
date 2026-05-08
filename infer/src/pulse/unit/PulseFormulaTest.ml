@@ -863,6 +863,17 @@ let%test_module "modulo" =
 
 
     let%expect_test _ =
+      test (y = eq y (i 1) && x = y + i 1 && x = w + i 2) ;
+      [%expect
+        {|
+        conditions: (empty)
+        phi: var_eqs: x=v7=v8 ∧ y=v6
+             && linear_eqs: x = w +2 ∧ y = w +1
+             && term_eqs: [w +1]=y∧[w +2]=x∧([w +1]=1)=y
+        |}]
+
+
+    let%expect_test _ =
       test ((x + i 4) mod i 2 = i 0) ;
       [%expect
         {|
@@ -875,14 +886,12 @@ let%test_module "modulo" =
 
     let%expect_test _ =
       test ((x + i 4) mod i 2 = i 0 && x mod i 2 = i 1) ;
-      [%expect
-        {| UNSAT: intersection =1*=0 |}]
+      [%expect {| UNSAT: intersection =1*=0 |}]
 
 
     let%expect_test _ =
       test ((x + i 4) mod i 2 <> x mod i 2) ;
-      [%expect
-        {| UNSAT: UNSAT atom according to eval_const_shallow: 0 ≠ 0 |}]
+      [%expect {| UNSAT: UNSAT atom according to eval_const_shallow: 0 ≠ 0 |}]
 
 
     let%expect_test _ =
@@ -898,20 +907,17 @@ let%test_module "modulo" =
 
     let%expect_test _ =
       test ((x + i 2) mod i 2 = i 0 && x mod i 2 <> i 0) ;
-      [%expect
-        {| UNSAT: intersection ≠0*=0 |}]
+      [%expect {| UNSAT: intersection ≠0*=0 |}]
 
 
     let%expect_test _ =
       test (y = (x + i 3) mod i 3 && x mod i 3 <> y) ;
-      [%expect
-        {| UNSAT: UNSAT atom according to eval_const_shallow: 0 ≠ 0 |}]
+      [%expect {| UNSAT: UNSAT atom according to eval_const_shallow: 0 ≠ 0 |}]
 
 
     let%expect_test _ =
       test (y = (x - i 3) mod i 3 && x mod i 3 <> y) ;
-      [%expect
-        {| UNSAT: UNSAT atom according to eval_const_shallow: 0 ≠ 0 |}]
+      [%expect {| UNSAT: UNSAT atom according to eval_const_shallow: 0 ≠ 0 |}]
   end )
 
 

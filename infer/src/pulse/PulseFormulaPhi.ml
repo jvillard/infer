@@ -1179,19 +1179,59 @@ end = struct
         new_eqs
 
 
+  let base_rec_fuel = 10_000
+
+  let rec_fuel = Stack.create ()
+
+  let reset_rec_fuel () = Stack.clear rec_fuel
+
+  let decr_rec_fuel (phi, f') =
+    Stack.push rec_fuel (phi, f') ;
+    if Int.equal (Stack.length rec_fuel) base_rec_fuel then
+      let stack = Stack.to_list rec_fuel in
+      let outermost_phi, _ = List.last_exn stack in
+      L.die InternalError
+        "ERROR: too many recursive calls in SMT solver@\n\
+         phi=@[%a@]@\n\
+         @\n\
+        \  @[%t@]@\n\
+         innermost phi=@[%a@]outermost phi=@[%a@]"
+        (pp_with_pp_var Var.pp) phi
+        (fun fmt -> Stack.iter rec_fuel ~f:(fun (_, f) -> F.fprintf fmt "%t" f))
+        (pp_with_pp_var Var.pp) phi (pp_with_pp_var Var.pp) outermost_phi
+
+
+  let progress x =
+    Stack.pop rec_fuel |> ignore ;
+    x
+
+
+  (*
+  let reset_rec_fuel () = ()
+
+  let decr_rec_fuel _ = ()
+
+  let progress x = x
+*)
+
   (** add [l1 = l2] to [phi.linear_eqs] and resolves consequences of that new fact
 
       [l1] and [l2] should have already been through {!normalize_linear} (w.r.t. [phi]) *)
   let rec solve_normalized_lin_eq ~fuel ?(force_no_tableau = false) new_eqs l1 l2 phi =
     Debug.p "solve_normalized_lin_eq: %a=%a@\n" (LinArith.pp Var.pp) l1 (LinArith.pp Var.pp) l2 ;
+    decr_rec_fuel
+    @@ ( phi
+       , fun fmt ->
+           F.fprintf fmt "solve_normalized_lin_eq: %a=%a@\n" (LinArith.pp Var.pp) l1
+             (LinArith.pp Var.pp) l2 ) ;
     LinArith.solve_eq l1 l2
     >>= function
     | None ->
-        Sat (phi, new_eqs)
+        Sat (phi, new_eqs) |> progress
     | Some (v, l) -> (
       match LinArith.get_as_var l with
       | Some v' ->
-          merge_vars ~fuel new_eqs v v' phi
+          merge_vars ~fuel new_eqs v v' phi |> progress
       | None -> (
           let* phi, new_eqs =
             if (not force_no_tableau) && Var.is_restricted v && LinArith.is_restricted l then
@@ -1211,23 +1251,31 @@ end = struct
               (* this can break the invariant that variables in the domain of [linear_eqs] do not
                    appear in the range of [linear_eqs], restore it *)
               add_linear_eq_and_solve_new_eq_opt ~fuel new_eqs v l phi
-              >>= propagate_linear_eq ~fuel v l
-          | Some l' ->
+              >>= propagate_linear_eq ~fuel v l |> progress
+          | Some l' when not (LinArith.equal l l') ->
               (* This is the only step that consumes fuel: discovering an equality [l = l']: because we
                    do not record these anywhere (except when their consequence can be recorded as [y =
                    l''] or [y = y']), we could potentially discover the same equality over and over and
                    diverge otherwise. Or could we?) *)
-              let* phi, new_eqs = propagate_linear_eq ~fuel v l (phi, new_eqs) in
-              if fuel > 0 then (
-                L.d_printfln "Consuming fuel solving linear equality (from %d)" fuel ;
-                solve_normalized_lin_eq ~fuel:(fuel - 1) new_eqs l l' phi )
+              decr_rec_fuel
+              @@ ( phi
+                 , fun fmt ->
+                     F.fprintf fmt "found another linear entry for %a:@\n  @[l=%a,@;l'=%a@]@\n"
+                       Var.pp v (LinArith.pp Var.pp) l (LinArith.pp Var.pp) l' ) ;
+              (* let* phi, new_eqs = propagate_linear_eq_not_in_lin_eq ~fuel v l (phi, new_eqs) in *)
+              if fuel > 0 then
+                ( L.d_printfln "Consuming fuel solving linear equality (from %d)" fuel ;
+                  solve_normalized_lin_eq ~fuel:(fuel - 1) new_eqs l l' phi )
+                |> progress
               else
                 (* [fuel = 0]: give up simplifying further for fear of diverging *)
                 raise
                   (OutOfFuel
                      ( phi
                      , new_eqs
-                     , fun fmt -> F.fprintf fmt "Ran out of fuel solving linear equality" ) ) ) )
+                     , fun fmt -> F.fprintf fmt "Ran out of fuel solving linear equality" ) )
+          | _ ->
+              (* already known *) Sat (phi, new_eqs) |> progress ) )
 
 
   and discharge_new_eq_opt ~fuel new_eqs v new_eq_opt phi =
@@ -1274,25 +1322,25 @@ end = struct
                merge_vars ~fuel new_eqs w v phi )
     | (`Positive | `Zero), (`Minimized | `Constant) ->
         (* [w = l_c + k1·v1 + ... + kn·vn], all coeffs [ki] are ≥0 (and so are all possible
-             values of all [vi]s since they are restricted variables), hence any possible value
-             of [w] is ≥0 so [w ≥ 0] is a tautologie and we can just discard the atom *)
+              values of all [vi]s since they are restricted variables), hence any possible value
+              of [w] is ≥0 so [w ≥ 0] is a tautologie and we can just discard the atom *)
         Debug.p "Tautology@\n" ;
         Sat (phi, new_eqs)
     | (`Positive | `Zero), (`Maximized | `Neither) ->
         (* [w = l] is feasible and not a tautologie (and [l] is restricted), add to the
-             tableau *)
+              tableau *)
         let phi = add_tableau_eq w l phi in
         Debug.p "Add to tableau@\n" ;
         Sat (phi, new_eqs)
     | `Negative, (`Maximized | `Constant) ->
         (* [l_c < 0], [w = l_c + k1·v1 + ... + kn·vn], all coeffs [ki] are ≤0 so [l] denotes
-             only negative values, hence cannot be ≥0: contradiction *)
+              only negative values, hence cannot be ≥0: contradiction *)
         Debug.p "Contradiction!@\n" ;
         let reason () = F.asprintf "tableau" in
         Unsat {reason; source= __POS__}
     | `Negative, (`Minimized | `Neither) -> (
       (* stuck, let's pivot to try to add a feasible equality to the tableau; there are two ways
-           to pivot in \[2\] *)
+              to pivot in \[2\] *)
       match Tableau.pivot_unbounded_with_positive_coeff phi.tableau w l with
       | Some tableau ->
           Sat (set_tableau tableau phi, new_eqs)
@@ -1360,9 +1408,9 @@ end = struct
         merge_vars ~fuel new_eqs v v' phi
     | Linear l -> (
         (* [l = v]: need to first solve it to get [l' = v'] such that [v' < vars(l')], and [l'] is
-             normalized wrt [phi.linear_eqs] (to get a canonical form), add this to [term_eqs], then
-             in order to know which equality should be added to [linear_eqs] we still need to
-             substitute [v'] with [linear_eqs] and solve again *)
+              normalized wrt [phi.linear_eqs] (to get a canonical form), add this to [term_eqs], then
+              in order to know which equality should be added to [linear_eqs] we still need to
+              substitute [v'] with [linear_eqs] and solve again *)
         LinArith.solve_eq (normalize_linear phi l) (LinArith.of_var v)
         >>= function
         | None ->
@@ -1399,14 +1447,14 @@ end = struct
         Sat (phi, new_eqs)
     | Some (v_old, v_new) ->
         (* new equality [v_old = v_new]: we need to propagate this fact to the various domains,
-             especially [linear_eqs]: we update a potential [v_old = l_old] to be [v_new = l_old],
-             and if [v_new = l_new] was known we add [l_old = l_new] *)
+              especially [linear_eqs]: we update a potential [v_old = l_old] to be [v_new = l_old],
+              and if [v_new = l_new] was known we add [l_old = l_new] *)
         let v_new = (v_new :> Var.t) in
         Debug.p "new eq: %a->%a@\n" Var.pp v_old Var.pp v_new ;
         L.d_printfln "new eq: %a = %a" Var.pp v_old Var.pp v_new ;
         let new_eqs = RevList.cons (Equal (v_old, v_new)) new_eqs in
         (* substitute [v_old -> v_new] in [phi.linear_eqs] while maintaining the [linear_eqs]
-             invariant *)
+              invariant *)
         propagate_var_eq ~fuel v_old v_new (phi, new_eqs)
 
 
@@ -1592,6 +1640,10 @@ end = struct
 
 
   and propagate_in_term_eqs ~fuel (tx : Term.t) x ((phi, new_eqs) as phi_new_eqs) =
+    decr_rec_fuel
+    @@ ( phi
+       , fun fmt -> F.fprintf fmt "propagate_in_term_eqs: %a -> %a@\n" (Term.pp Var.pp) tx Var.pp x
+       ) ;
     match subst_target_of_term phi tx with
     | NonLinearTermSubst _ ->
         Debug.p "prop in term eqs tx=%a, x=%a being ignored@\n" (Term.pp Var.pp) tx Var.pp x ;
@@ -1625,6 +1677,7 @@ end = struct
                         let* phi, new_eqs =
                           match Term.get_as_isinstanceof t with
                           | Some (var, typ, nullable) ->
+                              let var = (get_repr phi var :> Var.t) in
                               if is_neq_zero phi tx then (
                                 Debug.p "prop in term_eq adding below with nullable=%b\n" nullable ;
                                 let* phi, new_eqs = and_below var typ (phi, new_eqs) in
@@ -1686,15 +1739,19 @@ end = struct
                               atoms ;
                             and_normalized_atoms (phi, new_eqs) atoms ~orig_atom:atoms
                               ~add_term:true
-                            >>| snd )
+                            >>| snd |> progress )
                     | Domain | DomainAndRange -> (
                         let* phi, new_eqs = phi_new_eqs_sat in
                         let subst_target_x =
                           match subst_target_x with
                           | VarSubst v ->
                               Term.VarSubst (get_repr phi v :> Var.t)
-                          (* TODO: should renormalize in LinSubst too *)
-                          | _ ->
+                          | LinSubst l ->
+                              Term.LinSubst
+                                (LinArith.subst_variables
+                                   ~f:(fun v -> VarSubst (get_repr phi v :> Var.t))
+                                   l )
+                          | QSubst _ | ConstantSubst _ | NonLinearTermSubst _ ->
                               subst_target_x
                         in
                         let* t' =
@@ -1771,13 +1828,13 @@ end = struct
         Sat phi_new_eqs
     | Some in_atoms ->
         (* [tx=x] has been added to the term equalities so by the invariant (that we are about
-             to restore) there are no further occurrences of [x] in [phi.atoms] as we are going to
-             substitute them with [tx] to get maximally-expanded atoms *)
+              to restore) there are no further occurrences of [x] in [phi.atoms] as we are going to
+              substitute them with [tx] to get maximally-expanded atoms *)
         Debug.p "propagating %a = %a in atoms@\n" (Term.pp Var.pp) tx Var.pp x ;
         let phi = remove_from_atoms_occurrences x phi in
         let subst_target_x = subst_target_of_term phi tx in
         (* TODO: could be more efficient to Atom.Set.map + linearly follow along in in_atoms,
-             raising Unsat as needed and accumulating in a ref (no fold_map...) *)
+              raising Unsat as needed and accumulating in a ref (no fold_map...) *)
         Atom.Set.fold
           (fun atom phi_new_eqs_sat ->
             let* phi, new_eqs = phi_new_eqs_sat in
@@ -1875,8 +1932,8 @@ end = struct
     match LinArith.solve_for_unrestricted w l with
     | Some (v, l_v) ->
         (* there is at least one variable [v] whose value is not known to always be non-negative;
-             we cannot add it to the tableau, let's add the equality [v=l_v <=> w=l] to the "normal"
-             linear equalities for now *)
+              we cannot add it to the tableau, let's add the equality [v=l_v <=> w=l] to the "normal"
+              linear equalities for now *)
         Debug.p "Unrestricted %a = %a@\n" Var.pp v (LinArith.pp Var.pp) l_v ;
         solve_normalized_lin_eq ~fuel new_eqs l_v (LinArith.of_var v) phi
     | None ->
@@ -1906,6 +1963,10 @@ end = struct
 
 
   and solve_lin_eq new_eqs t1 t2 phi =
+    decr_rec_fuel
+    @@ ( phi
+       , fun fmt ->
+           F.fprintf fmt "solve_lin_eq: %a=%a@\n" (LinArith.pp Var.pp) t1 (LinArith.pp Var.pp) t2 ) ;
     with_base_fuel
       (solve_normalized_lin_eq new_eqs (normalize_linear phi t1) (normalize_linear phi t2) phi)
 
@@ -1913,7 +1974,7 @@ end = struct
   and and_var_linarith v l (phi, new_eqs) = solve_lin_eq new_eqs l (LinArith.of_var v) phi
 
   (* TODO: should we check if [φ ⊢ atom] (i.e. whether [φ ∧ ¬atom] is unsat) in [normalize_atom],
-       or is [normalize_atom] already just as strong? *)
+              or is [normalize_atom] already just as strong? *)
   and normalize_atom phi (atom : Atom.t) =
     let atom' = Atom.map_terms atom ~f:(fun t -> normalize_var_const phi t) in
     Debug.p "Normalizer.normalize_atom atom'=%a@\n" (Atom.pp_with_pp_var Var.pp) atom' ;
@@ -1928,8 +1989,8 @@ end = struct
         assert false
     | Atom.Equal (Linear l, Const c) | Atom.Equal (Const c, Linear l) ->
         (* NOTE: {!normalize_atom} calls {!Atom.eval}, which normalizes linear equalities so
-             they end up only on one side, hence only this match case is needed to detect linear
-             equalities *)
+              they end up only on one side, hence only this match case is needed to detect linear
+              equalities *)
         let+ phi', new_eqs = solve_lin_eq new_eqs l (LinArith.of_q c) phi in
         (true, (phi', new_eqs))
     | (Atom.Equal (Linear l, t) | Atom.Equal (t, Linear l))
@@ -1951,7 +2012,7 @@ end = struct
         (true, (phi', new_eqs))
     | atom' ->
         (* the previous normalization has "simplified" [Var] terms into [Linear] ones, revert
-             this *)
+              this *)
         let atom = Atom.simplify_linear atom' in
         let+ phi_new_eqs = (add_atom atom phi, new_eqs) |> propagate_atom atom in
         (false, phi_new_eqs)
@@ -1963,6 +2024,12 @@ end = struct
         and_termcond_atoms phi orig_atom
       else phi
     in
+    decr_rec_fuel
+    @@ ( phi
+       , fun fmt ->
+           F.fprintf fmt "and_normalized_atoms: %a@\n"
+             (Pp.seq ~sep:" &&& " (Atom.pp_with_pp_var Var.pp))
+             atoms ) ;
     SatUnsat.list_fold atoms
       ~init:(false, (upd_phi, new_eqs))
       ~f:(fun (linear_changed, (phi, new_eqs)) atom ->
@@ -1997,11 +2064,13 @@ end = struct
         the value to which we added the type must actually be null.
     *)
   let and_dynamic_type v t ?source_file (phi, new_eqs) =
+    reset_rec_fuel () ;
     let phi, should_zero = add_dynamic_type v t ?source_file phi in
     if should_zero then and_var_is_zero v (phi, new_eqs) else Sat (phi, new_eqs)
 
 
   let and_var_term ~fuel v t (phi, new_eqs) =
+    reset_rec_fuel () ;
     let* (t' : Term.t) =
       normalize_var_const phi t |> Atom.eval_term ~is_neq_zero:(is_neq_zero phi)
     in
@@ -2025,6 +2094,7 @@ end = struct
   (* interface *)
 
   let and_atom atom phi_new_eqs ~add_term =
+    reset_rec_fuel () ;
     Debug.p "BEGIN and_atom %a@\n" (Atom.pp_with_pp_var Var.pp) atom ;
     let phi_new_eqs' = and_atom atom phi_new_eqs ~add_term >>| snd in
     Debug.p "END and_atom %a -> %a@\n" (Atom.pp_with_pp_var Var.pp) atom
@@ -2034,6 +2104,7 @@ end = struct
 
 
   let and_normalized_atoms phi_new_eqs atoms ~orig_atom ~add_term =
+    reset_rec_fuel () ;
     let phi_new_eqs' = and_normalized_atoms phi_new_eqs atoms ~orig_atom ~add_term >>| snd in
     Debug.p "and_normalized_atoms [@[<v>%a@]] -> %a@\n"
       (Pp.seq ~sep:";" (Atom.pp_with_pp_var Var.pp))
@@ -2043,7 +2114,12 @@ end = struct
     phi_new_eqs'
 
 
-  let and_var_term v t phi_new_eqs = with_base_fuel (and_var_term v t phi_new_eqs)
+  let and_var_term v t phi_new_eqs =
+    reset_rec_fuel () ;
+    with_base_fuel (and_var_term v t phi_new_eqs)
 
-  let and_var_var v1 v2 (phi, new_eqs) = with_base_fuel (merge_vars new_eqs v1 v2 phi)
+
+  let and_var_var v1 v2 (phi, new_eqs) =
+    reset_rec_fuel () ;
+    with_base_fuel (merge_vars new_eqs v1 v2 phi)
 end
