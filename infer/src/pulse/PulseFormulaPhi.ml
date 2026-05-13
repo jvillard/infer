@@ -1166,6 +1166,7 @@ end = struct
                 (* replace vars by constants when available to possibly trigger further
                      simplifications in atoms. This is not actually needed for [term_eqs]. *)
                 QSubst q ) )
+      |> Term.simplify_linear
     in
     Debug.p "normalized term is %a@\n" (Term.pp Var.pp) t' ;
     t'
@@ -1248,7 +1249,7 @@ end = struct
               let v = (get_repr phi v :> Var.t) in
               let l = normalize_linear phi l in
               let new_eqs = add_lin_eq_to_new_eqs v l new_eqs in
-              LinArith.solve_eq l1 l2
+              LinArith.solve_eq (normalize_linear phi l1) (normalize_linear phi l2)
               >>= function
               | None ->
                   Sat (phi, new_eqs) |> progress
@@ -1726,7 +1727,7 @@ end = struct
                         (* Now check if the new equality on [x] introduced contradictions in [t=x] or new atoms *)
                         let* atoms_opt =
                           Atom.eval_with_normalized_terms ~is_neq_zero:(is_neq_zero phi)
-                            (Equal (t, Term.simplify_linear tx))
+                            (Equal (t, normalize_var_const phi tx))
                         in
                         match atoms_opt with
                         | None ->
