@@ -1180,39 +1180,52 @@ end = struct
         new_eqs
 
 
+  module RecursionDebug = struct
+    let base_rec_fuel = 10_000
+
+    type rec_stack = {stack: (F.formatter -> unit) Stack.t; mutable outer_phi: t option}
+
+    let rec_stack = {stack= Stack.create (); outer_phi= None}
+
+    let reset_rec_fuel () =
+      Stack.clear rec_stack.stack ;
+      rec_stack.outer_phi <- None ;
+      ()
+
+
+    let decr_rec_fuel (phi, f') =
+      Stack.push rec_stack.stack f' ;
+      if Option.is_none rec_stack.outer_phi then rec_stack.outer_phi <- Some phi ;
+      if Int.equal (Stack.length rec_stack.stack) base_rec_fuel then
+        L.die InternalError
+          "ERROR: too many recursive calls in SMT solver@\n\
+           phi=@[%a@]@\n\
+           @\n\
+          \  @[%t@]@\n\
+          \ innermost phi=@[%a@]@\n\
+          \ outermost phi=@[%a@]"
+          (pp_with_pp_var Var.pp) phi
+          (fun fmt -> Stack.iter rec_stack.stack ~f:(fun f -> F.fprintf fmt "%t" f))
+          (pp_with_pp_var Var.pp) phi (pp_with_pp_var Var.pp)
+          (Option.value_exn rec_stack.outer_phi)
+
+
+    let progress x =
+      Stack.pop rec_stack.stack |> ignore ;
+      x
+  end
+
   (*
-  let base_rec_fuel = 10_000
+  module RecursionDebug = struct
+    let reset_rec_fuel () = ()
 
-  let rec_fuel = Stack.create ()
+    let decr_rec_fuel _ = ()
 
-  let reset_rec_fuel () = Stack.clear rec_fuel
-
-  let decr_rec_fuel (phi, f') =
-    Stack.push rec_fuel (phi, f') ;
-    if Int.equal (Stack.length rec_fuel) base_rec_fuel then
-      let stack = Stack.to_list rec_fuel in
-      let outermost_phi, _ = List.last_exn stack in
-      L.die InternalError
-        "ERROR: too many recursive calls in SMT solver@\n\
-         phi=@[%a@]@\n\
-         @\n\
-        \  @[%t@]@\n\
-         innermost phi=@[%a@]outermost phi=@[%a@]"
-        (pp_with_pp_var Var.pp) phi
-        (fun fmt -> Stack.iter rec_fuel ~f:(fun (_, f) -> F.fprintf fmt "%t" f))
-        (pp_with_pp_var Var.pp) phi (pp_with_pp_var Var.pp) outermost_phi
-
-
-  let progress x =
-    Stack.pop rec_fuel |> ignore ;
-    x
+    let progress x = x
+  end
 *)
 
-  let reset_rec_fuel () = ()
-
-  let decr_rec_fuel _ = ()
-
-  let progress x = x
+  include RecursionDebug
 
   (** add [l1 = l2] to [phi.linear_eqs] and resolves consequences of that new fact
 
