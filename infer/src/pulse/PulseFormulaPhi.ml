@@ -1101,13 +1101,27 @@ end = struct
 
   exception OutOfFuel of (t * new_eqs * (F.formatter -> unit))
 
+  type fuel =
+    { linear_eq: int  (** fuel for internalizing a linear fact *)
+    ; propagate: int  (** fuel for inter-domain propagation of the consequences of a new fact *) }
+
+  let fuel_linear_eq fuel phi fmt =
+    if fuel.linear_eq < 1 then raise (OutOfFuel (phi, RevList.empty, fmt))
+    else {fuel with linear_eq= fuel.linear_eq - 1}
+
+
+  let fuel_propagate fuel phi fmt =
+    if fuel.propagate < 1 then raise (OutOfFuel (phi, RevList.empty, fmt))
+    else {fuel with propagate= fuel.propagate - 1}
+
+
   (* the only way to initialize fuel: no functions in the interface of this module
        take fuel as argument, and no functions in this module pass concrete fuel values,
        so this will always catch [OutOfFuel] exceptions and these exceptions will not
        escape this module *)
   let with_base_fuel f =
     (* an arbitrary value *)
-    let base_fuel = 10 in
+    let base_fuel = {linear_eq= 10; propagate= 1000} in
     try f ~fuel:base_fuel
     with OutOfFuel (phi, new_eqs, why) ->
       L.d_printfln "%t" why ;
@@ -1282,17 +1296,12 @@ end = struct
                      F.fprintf fmt "found another linear entry for %a:@\n  @[l=%a,@;l'=%a@]@\n"
                        Var.pp v (LinArith.pp Var.pp) l (LinArith.pp Var.pp) l' ) ;
               (* let* phi, new_eqs = propagate_linear_eq_not_in_lin_eq ~fuel v l (phi, new_eqs) in *)
-              if fuel > 0 then
-                ( L.d_printfln "Consuming fuel solving linear equality (from %d)" fuel ;
-                  solve_normalized_lin_eq ~fuel:(fuel - 1) new_eqs l l' phi )
-                |> progress
-              else
-                (* [fuel = 0]: give up simplifying further for fear of diverging *)
-                raise
-                  (OutOfFuel
-                     ( phi
-                     , new_eqs
-                     , fun fmt -> F.fprintf fmt "Ran out of fuel solving linear equality" ) )
+              let fuel =
+                fuel_linear_eq fuel phi (fun fmt ->
+                    F.fprintf fmt "found another linear entry for %a:@\n  @[l=%a,@;l'=%a@]@\n"
+                      Var.pp v (LinArith.pp Var.pp) l (LinArith.pp Var.pp) l' )
+              in
+              solve_normalized_lin_eq ~fuel new_eqs l l' phi |> progress
           | _ ->
               (* already known *) Sat (phi, new_eqs) |> progress ) )
 
@@ -1363,34 +1372,28 @@ end = struct
       match Tableau.pivot_unbounded_with_positive_coeff phi.tableau w l with
       | Some tableau ->
           Sat (set_tableau tableau phi, new_eqs)
-      | None ->
-          if fuel > 0 then (
-            Debug.p "PIVOT %d in %a@\n" fuel (Tableau.pp Var.pp) phi.tableau ;
-            match Tableau.pivot l phi.tableau with
-            | None ->
-                (* Huho, we cannot put the equality in a feasible form (i.e. [u = c + k1·v1 +
+      | None -> (
+          Debug.p "PIVOT %a@\n" (Tableau.pp Var.pp) phi.tableau ;
+          match Tableau.pivot l phi.tableau with
+          | None ->
+              (* Huho, we cannot put the equality in a feasible form (i.e. [u = c + k1·v1 +
                      ... + kn·vn] with [c≥0]). This isn't supposed to happen in theory but because
                      we're a bit sloppy with normalization we can exceptionally get there in
                      practice. Store it as an unrestricted linear equality to avoid losing
                      completeness and hope a later re-normalization will take care of it better. *)
-                L.debug Analysis Verbose "No pivot found for %a in %a@\n" (LinArith.pp Var.pp) l
-                  (Tableau.pp Var.pp) phi.tableau ;
-                (* set [force_no_tableau] so that the equality won't just ping-pong back to here *)
-                solve_normalized_lin_eq ~fuel ~force_no_tableau:true new_eqs (LinArith.of_var w)
-                  (normalize_restricted phi l) phi
-            | Some tableau ->
-                let phi = set_tableau tableau phi in
-                Debug.p "pivoted tableau: %a@\n" (Tableau.pp Var.pp) phi.tableau ;
-                solve_tableau_restricted_eq ~fuel:(fuel - 1) new_eqs w (normalize_restricted phi l)
-                  phi )
-          else
-            raise
-              (OutOfFuel
-                 ( phi
-                 , new_eqs
-                 , fun fmt ->
-                     F.fprintf fmt "Ran out of fuel pivoting the tableau %a@\n" (Tableau.pp Var.pp)
-                       phi.tableau ) ) )
+              L.debug Analysis Verbose "No pivot found for %a in %a@\n" (LinArith.pp Var.pp) l
+                (Tableau.pp Var.pp) phi.tableau ;
+              (* set [force_no_tableau] so that the equality won't just ping-pong back to here *)
+              solve_normalized_lin_eq ~fuel ~force_no_tableau:true new_eqs (LinArith.of_var w)
+                (normalize_restricted phi l) phi
+          | Some tableau ->
+              let phi = set_tableau tableau phi in
+              Debug.p "pivoted tableau: %a@\n" (Tableau.pp Var.pp) phi.tableau ;
+              let fuel =
+                fuel_linear_eq fuel phi (fun fmt ->
+                    F.fprintf fmt "pivoted tableau: %a@\n" (Tableau.pp Var.pp) phi.tableau )
+              in
+              solve_tableau_restricted_eq ~fuel new_eqs w (normalize_restricted phi l) phi ) )
 
 
   (** add [t = v] to [phi.term_eqs] and resolves consequences of that new fact; assumes that linear
@@ -1576,7 +1579,13 @@ end = struct
                       (* need to pivot the equality [v = lv'] to restore the above invariant since
                            it's not in the right form *)
                       let phi = remove_linear_eq v lv phi in
-                      solve_normalized_lin_eq ~fuel:(fuel - 1) new_eqs
+                      let fuel =
+                        fuel_linear_eq fuel phi (fun fmt ->
+                            F.fprintf fmt
+                              "linear expression %a = %a is no longer in normal form, pivoting"
+                              Var.pp v (LinArith.pp Var.pp) lv' )
+                      in
+                      solve_normalized_lin_eq ~fuel new_eqs
                         (LinArith.of_var v |> normalize_linear phi)
                         lv' phi
                     else
@@ -1753,6 +1762,12 @@ end = struct
                               (Term.pp Var.pp) t ;
                             Sat (add_occurrence_to_range_of_term_eq t x' phi, new_eqs)
                         | Some atoms ->
+                            decr_rec_fuel
+                            @@ ( phi
+                               , fun fmt ->
+                                   F.fprintf fmt "Found new atoms %a@\n"
+                                     (Pp.seq ~sep:"," (Atom.pp_with_pp_var Var.pp))
+                                     atoms ) ;
                             Debug.p "Found new atoms %a@\n"
                               (Pp.seq ~sep:"," (Atom.pp_with_pp_var Var.pp))
                               atoms ;
