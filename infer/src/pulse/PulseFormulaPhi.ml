@@ -1874,11 +1874,10 @@ end = struct
             let* phi, new_eqs = phi_new_eqs_sat in
             if Atom.Set.mem atom phi.atoms then
               let phi = remove_atom atom phi in
-              and_atom
+              and_normalized_atom (phi, new_eqs)
                 (Atom.subst_variables
                    ~f:(fun x' -> if Var.equal x' x then subst_target_x else VarSubst x')
                    atom )
-                (phi, new_eqs) ~add_term:false
               >>| snd
             else phi_new_eqs_sat )
           in_atoms
@@ -2071,10 +2070,6 @@ end = struct
         (linear_changed || changed', phi_new_eqs) )
 
 
-  and and_atom atom (phi, new_eqs) ~add_term =
-    normalize_atom phi atom >>= and_normalized_atoms (phi, new_eqs) ~orig_atom:[atom] ~add_term
-
-
   and and_var_is_zero v (phi, neweqs) =
     if Language.curr_language_is Erlang then
       (* No null pointers in Erlang *)
@@ -2091,6 +2086,10 @@ end = struct
   and and_notbelow v t (phi, new_eqs) =
     let phi, should_zero = add_notbelow v t phi in
     if should_zero then and_var_is_zero v (phi, new_eqs) else Sat (phi, new_eqs)
+
+
+  let and_atom atom (phi, new_eqs) ~add_term =
+    normalize_atom phi atom >>= and_normalized_atoms (phi, new_eqs) ~orig_atom:[atom] ~add_term
 
 
   (* [and_dynamic_type] wraps [add_dynamic_type]. In particular, if the call to the former
