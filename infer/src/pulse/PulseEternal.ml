@@ -264,6 +264,7 @@ let rec unify_rhs_from_address ~rhs ~addr_rhs ~addr_hist_lhs unification =
   | `NotAlreadyVisited -> (
       L.d_printfln "visiting from address %a <-> %a" AbstractValue.pp addr_rhs AbstractValue.pp
         (fst addr_hist_lhs) ;
+      (* XXX TODO: THIS IS ACTUALLY UNSAFE, NEED NORMALISATION *)
       match UnsafeMemory.find_opt addr_rhs rhs.BaseDomain.heap with
       | None ->
           Ok unification

@@ -13,7 +13,7 @@ module SatUnsat = PulseSatUnsat
 module Debug = PulseFormulaDebug
 module Var = PulseFormulaVar
 open SatUnsat.Import
-open PolyVariantEqual
+open! PolyVariantEqual
 module LinArith = PulseFormulaLinArit
 module Tableau = PulseFormulaTableau
 module Term = PulseFormulaTerm
@@ -920,16 +920,23 @@ end = struct
     match norm with Unsat unsat_info -> raise_notrace (Contradiction unsat_info) | Sat x -> x
 
 
-  let debug_pp_sequent lhs (instantiated, subst) exists rhs =
-    let pp_rhs fmt formula =
-      Term.VarMap.pp_with_pp_var Var.pp fmt (Formula.subst_term_eqs subst formula.phi)
-    in
+  let debug_pp_sequent lhs (ground, subst) rhs =
     Var.throwaway_context
     @@ fun () ->
-    let exists = Var.Set.filter (fun v -> not @@ Var.Map.mem v instantiated) exists in
+    let rhs_term_eqs = Formula.subst_term_eqs subst rhs.phi in
+    let exists =
+      Term.VarMap.fold
+        (fun t v exists ->
+          let exists = if Var.Set.mem v ground then exists else Var.Set.add v exists in
+          Term.fold_variables t ~init:exists ~f:(fun exists v ->
+              if Var.Set.mem v ground then exists else Var.Set.add v exists ) )
+        rhs_term_eqs Var.Set.empty
+    in
     L.d_printfln_escaped "%a ?⊢? ∃%a. %a"
       (Formula.pp_term_eqs_with_pp_var Var.pp)
-      lhs.phi Var.Set.pp exists pp_rhs rhs
+      lhs.phi Var.Set.pp exists
+      (Term.VarMap.pp_with_pp_var Var.pp)
+      rhs_term_eqs
 
 
   (** translate each variable in [formula_foreign] according to [subst] then prove that each
@@ -949,109 +956,109 @@ end = struct
       let v' = subst v in
       Term.VarSubst v'
     in
+    let is_linear_with_one_non_ground_var ground_vars new_vars (t' : Term.t) v' =
+      match t' with
+      | Linear _ ->
+          let found_new_var =
+            if Var.Set.mem v' ground_vars || Var.Set.mem v' new_vars then (0, None) else (1, Some v')
+          in
+          let how_many, found_new_var =
+            Term.fold_variables t' ~init:found_new_var ~f:(fun (n, found_new_var) v_t' ->
+                if Var.Set.mem v_t' ground_vars || Var.Set.mem v_t' new_vars then (n, found_new_var)
+                else (n + 1, Some v_t') )
+          in
+          if how_many > 1 then None else found_new_var
+      | _ ->
+          None
+    in
+    let is_ground_term_to_non_ground_var ground_vars new_vars t' v' =
+      (not (Var.Set.mem v' ground_vars || Var.Set.mem v' new_vars))
+      && Iter.for_all (fun v_t' -> Var.Set.mem v_t' ground_vars || Var.Set.mem v_t' new_vars)
+         @@ Iter.from_labelled_iter (Term.iter_variables t')
+    in
+    let collect_new_binding ground_vars t v (new_vars, bindings) =
+      let v' = subst v in
+      let t' = Term.subst_variables ~f:f_subst t in
+      match is_linear_with_one_non_ground_var ground_vars new_vars t' v' with
+      | Some v_newly_ground ->
+          (Var.Set.add v_newly_ground new_vars, (t', v') :: bindings)
+      | None when is_ground_term_to_non_ground_var ground_vars new_vars t' v' ->
+          (Var.Set.add v' new_vars, (t', v') :: bindings)
+      | None ->
+          (new_vars, bindings)
+    in
+    let collect_new_bindings ground_vars phi_foreign new_vars_bindings =
+      Formula.term_eqs_fold (collect_new_binding ground_vars) phi_foreign new_vars_bindings
+    in
+    let collect_bindings subst phi_foreign =
+      let rec collect phi_foreign (ground_vars, bindings) =
+        let new_vars, bindings =
+          collect_new_bindings ground_vars phi_foreign (Var.Set.empty, bindings)
+        in
+        if Var.Set.is_empty new_vars then (ground_vars, bindings)
+        else
+          let ground_vars = Var.Set.union ground_vars new_vars in
+          collect phi_foreign (ground_vars, bindings)
+      in
+      let ground_vars = subst |> Var.Map.to_seq |> Seq.map fst |> Var.Set.of_seq in
+      collect phi_foreign (ground_vars, [])
+    in
     (* HEURISTIC: all RHS atoms that transitively relate RHS variables that have been unified to
-     variables from the LHS should be conjoined to the LHS as they are likely to reflect expressions
-     constructed from these variables and not facts to be established in a universal way.
+       variables from the LHS should be conjoined to the LHS as they are likely to reflect expressions
+       constructed from these variables and not facts to be established in a universal way.
 
-     Example for the program [while(x+2>0) { x++; }]:
+       Example for the program [while(x+2>0) { x++; }]:
 
-     We enter the loop with some value for [x] that gets abstracted away:
-     {[
-       α(Init) = P0 = x |-> v
-     ]}
+       We enter the loop with some value for [x] that gets abstracted away:
+       {[
+         α(Init) = P0 = x |-> v
+       ]}
 
-     After going through the body once, we reach the back edge in the CFG with the assertion:
+       After going through the body once, we reach the back edge in the CFG with the assertion:
 
-     {[
-       P1= x|->v' * v''=v+2 * v'=v+1 * v''>0
-     ]}
+       {[
+         P1= x|->v' * v''=v+2 * v'=v+1 * v''>0
+       ]}
 
-     We then ask whether this implies [P0], together with the conditions needed to execute the loop
-     body once more, i.e. the pure part of [P1]. Since variables (abstract values) are immutable,
-     [P1] pure facts make sense for [P0]. However, we don't want to establish [P0] exactly: we just
-     need to establish that there exists instantiations of the variables that make [P0 ∧ pure(P1)]
-     true, i.e. existentially quantify. The entailment question becomes:
+       We then ask whether this implies [P0], together with the conditions needed to execute the loop
+       body once more, i.e. the pure part of [P1]. Since variables (abstract values) are immutable,
+       [P1] pure facts make sense for [P0]. However, we don't want to establish [P0] exactly: we just
+       need to establish that there exists instantiations of the variables that make [P0 ∧ pure(P1)]
+       true, i.e. existentially quantify. The entailment question becomes:
 
-     {[
-       x↦v' ∧ v'' = v+2 ∧ v' = v+1 ∧ v''>0 ⊢ ∃v,v',v''. x↦v ∧ v'=v+1 ∧ v''=v+2 ∧ v''>0
-     ]}
+       {[
+         x↦v' ∧ v'' = v+2 ∧ v' = v+1 ∧ v''>0 ⊢ ∃v,v',v''. x↦v ∧ v'=v+1 ∧ v''=v+2 ∧ v''>0
+       ]}
 
-     Let's rename existentially bound variables for clarity:
+       Let's rename existentially bound variables for clarity:
 
-     {[
-       x↦v' ∧ v'' = v+2 ∧ v' = v+1 ∧ v''>0 ⊢ ∃w,w',w''. x↦w ∧ w'=w+1 ∧ w''=w+2 ∧ w''>0
-     ]}
+       {[
+         x↦v' ∧ v'' = v+2 ∧ v' = v+1 ∧ v''>0 ⊢ ∃w,w',w''. x↦w ∧ w'=w+1 ∧ w''=w+2 ∧ w''>0
+       ]}
 
-     The step before calling [implies] was heap unification, which will instantiate [w] with [v']:
+       The step before calling [implies] was heap unification, which will instantiate [w] with [v']:
 
-     {[
-       x↦v' ∧ v'' = v+2 ∧ v' = v+1 ∧ v''>0 ⊢ ∃w',w''. x↦v' ∧ w'=v'+1 ∧ w''=v'+2 ∧ w''>0
-     ]}
+       {[
+         x↦v' ∧ v'' = v+2 ∧ v' = v+1 ∧ v''>0 ⊢ ∃w',w''. x↦v' ∧ w'=v'+1 ∧ w''=v'+2 ∧ w''>0
+       ]}
 
-     So, the question asked to this function, [implies], is, after removing the matching spatial [↦]
-     predicates:
+       So, the question asked to this function, [implies], is, after removing the matching spatial [↦]
+       predicates:
 
-     {[
-       v'' = v+2 ∧ v' = v+1 ∧ v''>0 ⊢ ∃w',w''. w'=v'+1 ∧ w''=v'+2 ∧ w''>0
-     ]}
+       {[
+         v'' = v+2 ∧ v' = v+1 ∧ v''>0 ⊢ ∃w',w''. w'=v'+1 ∧ w''=v'+2 ∧ w''>0
+       ]}
 
 
-     Now the HEURISTIC part is to remark that [w'] and [w''] are bound to terms about [v'], so they
-     can be conjoined to LHS instead first, then we'll try to prove each remaining condition atom
-     (here only [w''>0]) is implied:
+       Now the HEURISTIC part is to remark that [w'] and [w''] are bound to terms about [v'], so they
+       can be conjoined to LHS instead first, then we'll try to prove each remaining condition atom
+       (here only [w''>0]) is implied:
 
-     {[
-       v'' = v+2 ∧ v' = v+1 ∧ v''>0 ∧ w'=v'+1 ∧ w''=v'+2  ⊢ w''>0
-     ]}
-     v]
- *)
-    let vars_to_reify =
-      DeadVariables.get_reachable_from
-        (DeadVariables.build_var_graph formula0.phi)
-        (Var.Map.to_seq !subst_map |> Seq.map fst |> Var.Set.of_seq)
-    in
-    subst_map :=
-      Var.Set.fold
-        (fun v subst_map ->
-          if Var.Map.mem v subst_map then subst_map else Var.Map.add v (Var.mk_fresh ()) subst_map )
-        vars_to_reify !subst_map ;
-    debug_pp_sequent formula0 (subst0, !subst_map) vars_to_reify formula_foreign ;
-    (* TODO: instead of matching atoms/terms with two or more existentially quantified variables,
-     match "bindings": variables that are just intermediate variables representing a term ultimately
-     built from variables in [subst0]. *)
-    let should_be_conjoined acc v =
-      match acc with
-      | `FoundNone ->
-          `FoundOne v
-      | `FoundTwo ->
-          `FoundTwo
-      | `FoundOne v' ->
-          if Var.equal v v' then acc else `FoundTwo
-    in
-    let and_term_eqs ?(filter = fun _ _ -> true) phi_foreign phi =
-      IContainer.fold_of_pervasives_map_fold Formula.term_eqs_fold phi_foreign ~init:phi
-        ~f:(fun phi (t_foreign, v_foreign) ->
-          if filter t_foreign v_foreign then
-            let t = Term.subst_variables t_foreign ~f:f_subst in
-            let phi, _new_eqs =
-              Formula.Normalizer.and_var_term (subst v_foreign) t (phi, RevList.empty)
-              |> sat_value_exn
-            in
-            phi
-          else phi )
-    in
-    let and_atoms ?(filter = fun _ -> true) atoms_foreign phi =
-      Seq.fold_left
-        (fun phi atom_foreign ->
-          if filter atom_foreign then
-            let atom = Atom.subst_variables atom_foreign ~f:f_subst in
-            let phi, _new_eqs =
-              Formula.Normalizer.and_atom atom (phi, RevList.empty) ~add_term:false |> sat_value_exn
-            in
-            phi
-          else phi )
-        phi atoms_foreign
-    in
+       {[
+         v'' = v+2 ∧ v' = v+1 ∧ v''>0 ∧ w'=v'+1 ∧ w''=v'+2  ⊢ w''>0
+       ]}
+       v]
+    *)
     let assert_atom phi atom =
       match Formula.Normalizer.and_atom (Atom.nnot atom) (phi, RevList.empty) ~add_term:false with
       | Unsat unsat_info ->
@@ -1078,21 +1085,19 @@ end = struct
     in
     try
       (* first use the HEURISTIC above to add some of the formula as facts *)
+      let ground, bindings = collect_bindings subst0 formula_foreign.phi in
+      debug_pp_sequent formula0 (ground, !subst_map) formula_foreign ;
       let phi =
-        and_term_eqs
-          ~filter:(fun t_foreign v_foreign ->
-            Term.fold_variables t_foreign
-              ~init:(should_be_conjoined `FoundNone v_foreign)
-              ~f:should_be_conjoined
-            = `FoundTwo )
-          formula_foreign.phi formula0.phi
-        |> and_atoms
-             ~filter:(fun atom_foreign ->
-               Atom.fold_variables atom_foreign ~init:`FoundNone ~f:should_be_conjoined = `FoundTwo )
-             (formula_foreign.phi.atoms |> Atom.Set.to_seq)
+        List.fold bindings ~init:formula0.phi ~f:(fun phi (t, v) ->
+            let phi, _new_eqs =
+              Formula.Normalizer.and_var_term v t (phi, RevList.empty) |> sat_value_exn
+            in
+            phi )
       in
       (* try to imply each atom in the conditions *)
+      L.d_printfln "implies_atoms going once on @[%a@]" (Formula.pp_with_pp_var Var.pp) phi ;
       implies_atoms phi (formula_foreign.conditions |> Atom.Map.to_seq |> Seq.map fst) ;
+      L.d_printfln "implies_atoms going twice" ;
       implies_terms phi (formula_foreign.phi.term_conditions2 |> Term.Set.to_seq) ;
       Ok ()
     with
