@@ -1568,7 +1568,7 @@ module PulseTransferFunctions = struct
             AnalysisState.set_active_loop id ;
             let abstracted_astate =
               PulseEternal.abstract astate
-              |> AbductiveDomain.add_loop_invariant_under_inference ~entry:(Some astate) id
+              |> AbductiveDomain.add_loop_invariant_under_inference ~entry:astate id
             in
             ([ContinueProgram astate; ContinueProgram abstracted_astate], path, astate_n) )
           else ([ContinueProgram astate], path, astate_n)
@@ -1588,7 +1588,7 @@ module PulseTransferFunctions = struct
           let id = Procdesc.Node.unsafe_int_to_id header_id in
           if Config.pulse_eternal then
             match AbductiveDomain.get_loop_invariant_under_inference id astate with
-            | Some {previous_astate_at_header; astate_entry= Some astate_entry}
+            | Some {previous_astate_at_header; astate_entry}
               when List.exists previous_astate_at_header ~f:(fun astate_at_loop_head ->
                        AbstractValue.throwaway_context
                        @@ fun () -> PulseEternal.implies astate (astate_entry, astate_at_loop_head) )

@@ -88,9 +88,7 @@ type t =
   ; skipped_calls: SkippedCalls.t }
 
 and loop_invariant_under_inference =
-  { header: (Procdesc.Node.id[@yojson.opaque])
-  ; previous_astate_at_header: t list
-  ; astate_entry: t option }
+  {header: (Procdesc.Node.id[@yojson.opaque]); previous_astate_at_header: t list; astate_entry: t}
 [@@deriving compare, equal, yojson_of]
 
 let pp_ ~is_summary f

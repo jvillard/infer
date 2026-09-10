@@ -79,7 +79,7 @@ type t = private
   }
 
 and loop_invariant_under_inference =
-  {header: Procdesc.Node.id; previous_astate_at_header: t list; astate_entry: t option}
+  {header: Procdesc.Node.id; previous_astate_at_header: t list; astate_entry: t}
 [@@deriving equal]
 
 val leq : lhs:t -> rhs:t -> bool
@@ -414,7 +414,7 @@ val push_loop_header_info : Procdesc.Node.id -> Timestamp.t -> t -> t
 val get_loop_invariant_under_inference :
   Procdesc.Node.id -> t -> loop_invariant_under_inference option
 
-val add_loop_invariant_under_inference : Procdesc.Node.id -> entry:t option -> t -> t
+val add_loop_invariant_under_inference : Procdesc.Node.id -> entry:t -> t -> t
 
 val record_transitive_access : Location.t -> t -> t
 
