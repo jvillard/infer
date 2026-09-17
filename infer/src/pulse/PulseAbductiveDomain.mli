@@ -79,7 +79,7 @@ type t = private
   }
 
 and loop_invariant_under_inference =
-  {header: Procdesc.Node.id; previous_astate_at_header: t list; astate_entry: t}
+  {header: PulseLoopHeaderInfo.id; previous_astate_at_header: t list; astate_entry: t}
 [@@deriving equal]
 
 val leq : lhs:t -> rhs:t -> bool
@@ -403,18 +403,18 @@ val declare_unknown_values : t -> t
 
 val set_path_condition : Formula.t -> t -> t
 
-val init_loop_header_info : Procdesc.Node.id -> t -> t
+val init_loop_header_info : PulseLoopHeaderInfo.id -> t -> t
 
-val remove_loop_header_info : Procdesc.Node.id -> t -> t
+val remove_loop_header_info : PulseLoopHeaderInfo.id -> t -> t
 
 val map_loop_header_formulas : t -> f:(Formula.t -> Formula.t) -> t
 
-val push_loop_header_info : Procdesc.Node.id -> Timestamp.t -> t -> t
+val push_loop_header_info : PulseLoopHeaderInfo.id -> Timestamp.t -> t -> t
 
 val get_loop_invariant_under_inference :
-  Procdesc.Node.id -> t -> loop_invariant_under_inference option
+  PulseLoopHeaderInfo.id -> t -> loop_invariant_under_inference option
 
-val add_loop_invariant_under_inference : Procdesc.Node.id -> entry:t -> t -> t
+val add_loop_invariant_under_inference : PulseLoopHeaderInfo.id -> entry:t -> t -> t
 
 val record_transitive_access : Location.t -> t -> t
 
