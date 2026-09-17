@@ -11,7 +11,7 @@ open PulseBasicInterface
 
 type t [@@deriving compare, equal]
 
-type id = Procdesc.Node.id
+type id = Procdesc.Node.id [@@deriving compare, equal]
 
 val empty : t
 
@@ -26,3 +26,5 @@ val init_loop_info : id -> t -> t
 val remove_loop_info : id -> t -> t
 
 val pp : F.formatter -> t -> unit
+
+val pp_id : F.formatter -> id -> unit

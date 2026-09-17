@@ -17,7 +17,9 @@ type loop_info = {local_path_condition: Formula.t; stack: iteration_info list}
 
 type t = loop_info Procdesc.IdMap.t [@@deriving compare, equal]
 
-type id = Procdesc.IdMap.key
+type id = Procdesc.Node.id [@@deriving compare, equal]
+
+let pp_id = Procdesc.Node.pp_id
 
 let pp_iteration_info fmt (idx, {timestamp; path_stamp}) =
   F.fprintf fmt "@[<hv>#%d:{@[<v>t= %a@;path_stamp=%a@]}@]" idx Timestamp.pp timestamp
