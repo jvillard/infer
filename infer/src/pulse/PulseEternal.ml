@@ -333,7 +333,7 @@ let implies (astate_lhs : AbductiveDomain.t)
         PulseFormula.implies_conditions_up_to ~subst:unification.subst astate_lhs.path_condition
           ~implies:astate_lhs.path_condition
       with
-      | Ok () -> (
+      | Ok subst -> (
           (* [astate_entry = astate_rhs * φ_entry]. We want to establish that [astate_entry] is
              compatible with conditions in [astate_rhs], which contains inferred constraints on the
              heap abstract values in [astate_entry].  i.e. [φ_entry ∧ lhs.path_condition] is SAT *)
@@ -341,8 +341,25 @@ let implies (astate_lhs : AbductiveDomain.t)
           match
             PulseFormula.compatible_conditions astate_entry.path_condition astate_lhs.path_condition
           with
-          | Ok _ ->
-              true
+          | Ok _ -> (
+            (* there could be other pure facts to check on the RHS *)
+            match
+              PulseFormula.implies_conditions_up_to ~subst astate_lhs.path_condition
+                ~implies:astate_rhs.path_condition
+            with
+            | Ok _ ->
+                true
+            | Error (`Contradiction unsat_info) ->
+                L.d_printfln_escaped "implication failed, UNSAT when adding pure facts:@\n  %s"
+                  (unsat_info.reason ()) ;
+                false
+            | Error (`NotImplied (phi, atom)) ->
+                L.d_printfln_escaped "implication failed:@\n  @[%a@\n⊬ %a@]"
+                  (PulseFormulaPhi.pp_with_pp_var AbstractValue.pp)
+                  phi
+                  (PulseFormulaAtom.pp_with_pp_var AbstractValue.pp)
+                  atom ;
+                false )
           | Error (`Contradiction unsat_info) ->
               L.d_printfln_escaped "implication failed, UNSAT when adding pure facts:@\n  %s"
                 (unsat_info.reason ()) ;

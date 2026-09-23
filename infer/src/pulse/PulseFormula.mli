@@ -208,7 +208,9 @@ val implies_conditions_up_to :
      subst:Var.t Var.Map.t
   -> t
   -> implies:t
-  -> (unit, [> `Contradiction of SatUnsat.unsat_info | `NotImplied of Formula.t * Atom.t]) result
+  -> ( Var.t Var.Map.t
+     , [> `Contradiction of SatUnsat.unsat_info | `NotImplied of Formula.t * Atom.t] )
+     result
 
 val compatible_conditions : t -> t -> (unit, [> `Contradiction of SatUnsat.unsat_info]) result
 
