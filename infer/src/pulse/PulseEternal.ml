@@ -34,10 +34,6 @@ let pp_subst fmt subst =
   (AddressMap.pp ~pp_value:(fun fmt addr -> AbstractValue.pp fmt addr)) fmt subst
 
 
-let to_lhs_subst_fold_constant_astate _astate f subst init =
-  AddressMap.fold (fun addr_rhs addr_lhs acc -> f addr_rhs addr_lhs acc) subst init
-
-
 let to_lhs_value_ _astate subst x =
   (* TODO: this used to [canon_fst] the result, look into this *) AddressMap.find_opt x subst
 
@@ -180,14 +176,15 @@ let visit unification ~rhs ~addr_rhs ~addr_hist_lhs =
   let check_if_alias =
     match to_rhs_addr unification addr_lhs with
     | Some addr_rhs' when not (AbstractValue.equal addr_rhs addr_rhs') ->
-        if
-          (* [addr_lhs] corresponds to several values in the rhs, see if that's a problem for
+        if(* [addr_lhs] corresponds to several values in the rhs, see if that's a problem for
              unification, i.e. if both values are addresses in the rhs's heap, which means they must
              be disjoint. If so, raise a contradiction, but if not then continue as it just means
              that the rhs doesn't care about the value of these variables, but record that they are
              equal. *)
-          UnsafeMemory.mem addr_rhs rhs.BaseDomain.heap
-          && UnsafeMemory.mem addr_rhs' rhs.BaseDomain.heap
+          [@alert "-deprecated"]
+          (* we got these addresses from canonicalized sources already *)
+          BaseMemory.mem (CanonValue.unsafe_cast addr_rhs) rhs.BaseDomain.heap
+          && BaseMemory.mem (CanonValue.unsafe_cast addr_rhs') rhs.BaseDomain.heap
         then raise_notrace (Contradiction (Aliasing {addr_lhs; addr_rhs; addr_rhs'; unification}))
         else `NoAliasFound (and_aliasing_arith ~addr_rhs:addr_rhs' ~addr_lhs0:addr_lhs unification)
     | _ ->
@@ -234,41 +231,20 @@ let translate_access_to_lhs astate subst (access_rhs : Access.t) : _ * Access.t 
       (subst, access_rhs)
 
 
-(* TODO: what's this for? *)
-let check_dict_keys ~rhs unification =
-  let keys_to_check =
-    to_lhs_subst_fold_constant_astate unification.astate
-      (fun addr_rhs addr_hist_lhs keys_to_check ->
-        match UnsafeAttributes.get_dict_read_const_keys addr_rhs rhs.BaseDomain.attrs with
-        | None ->
-            keys_to_check
-        | Some keys ->
-            (addr_hist_lhs, keys) :: keys_to_check )
-      unification.subst []
-  in
-  PulseResult.list_fold keys_to_check ~init:unification.astate ~f:(fun astate (addr_lhs, keys) ->
-      PulseResult.container_fold
-        ~fold:(IContainer.fold_of_pervasives_map_fold Attribute.ConstKeys.fold) keys ~init:astate
-        ~f:(fun astate (key, (timestamp, trace)) ->
-          PulseOperations.add_dict_read_const_key timestamp trace addr_lhs key astate ) )
-
-
 (** Unify the (abstract memory) subgraph of [rhs] reachable from [addr_rhs] in [unification.astate]
     starting from address [addr_lhs]. Report an error if some invalid addresses are traversed in the
     process. *)
 let rec unify_rhs_from_address ~rhs ~addr_rhs ~addr_hist_lhs unification =
-  let* visited_status, unification = visit unification ~rhs ~addr_rhs ~addr_hist_lhs in
+  let* visited_status, unification =
+    visit unification ~rhs:(rhs.AbductiveDomain.post :> BaseDomain.t) ~addr_rhs ~addr_hist_lhs
+  in
   match visited_status with
   | `AlreadyVisited ->
       Ok unification
-  | `NotAlreadyVisited -> (
+  | `NotAlreadyVisited ->
       L.d_printfln "visiting from address %a <-> %a" AbstractValue.pp addr_rhs AbstractValue.pp
         (fst addr_hist_lhs) ;
-      (* XXX TODO: THIS IS ACTUALLY UNSAFE, NEED NORMALISATION *)
-      match UnsafeMemory.find_opt addr_rhs rhs.BaseDomain.heap with
-      | None ->
-          Ok unification
-      | Some edges_rhs -> (
+      if Memory.exists_edge ~f:(fun _ -> true) addr_rhs rhs then
         match
           BaseAddressAttributes.check_valid
             (AbductiveDomain.CanonValue.canon' unification.astate (fst addr_hist_lhs))
@@ -277,9 +253,8 @@ let rec unify_rhs_from_address ~rhs ~addr_rhs ~addr_hist_lhs unification =
         | Error _ ->
             raise_notrace (Contradiction InvalidAccess)
         | Ok () ->
-            let* astate = check_dict_keys ~rhs unification in
-            PulseResult.container_fold ~fold:UnsafeMemory.Edges.fold ~init:{unification with astate}
-              edges_rhs ~f:(fun unification (access_rhs, (addr_rhs_dest, addr_rhs)) ->
+            PulseResult.container_fold ~fold:(Memory.fold_edges addr_rhs) ~init:unification rhs
+              ~f:(fun unification (access_rhs, (addr_rhs_dest, addr_rhs)) ->
                 match (access_rhs : Access.t) with
                 | ArrayAccess _ ->
                     Ok
@@ -295,7 +270,8 @@ let rec unify_rhs_from_address ~rhs ~addr_rhs ~addr_hist_lhs unification =
                     in
                     let unification = {unification with astate} in
                     unify_rhs_from_address ~rhs ~addr_rhs:addr_rhs_dest
-                      ~addr_hist_lhs:addr_hist_dest_lhs unification ) ) )
+                      ~addr_hist_lhs:addr_hist_dest_lhs unification )
+      else Ok unification
 
 
 let unify_rhs_from_array_index ~rhs {addr_rhs_dest; access_rhs; addr_hist_lhs} unification =
@@ -319,14 +295,11 @@ let unify_rhs_from_array_indices ~rhs unification =
 let unify_rhs_from_stack ~rhs unification =
   fold_rhs_stack rhs unification
     ~f:(fun _pvar ~addr_hist_rhs:(addr_rhs, _pre_hist) ~addr_hist_lhs unification ->
-      unify_rhs_from_address
-        ~rhs:(rhs.AbductiveDomain.post :> BaseDomain.t)
-        ~addr_rhs ~addr_hist_lhs unification )
+      unify_rhs_from_address ~rhs ~addr_rhs ~addr_hist_lhs unification )
 
 
-let unify astate_rhs unification =
-  let rhs_post = (astate_rhs.AbductiveDomain.post :> BaseDomain.t) in
-  unify_rhs_from_stack ~rhs:astate_rhs unification >>= unify_rhs_from_array_indices ~rhs:rhs_post
+let unify rhs unification =
+  unify_rhs_from_stack ~rhs unification >>= unify_rhs_from_array_indices ~rhs
 
 
 let implies (astate_lhs : AbductiveDomain.t)
@@ -334,8 +307,6 @@ let implies (astate_lhs : AbductiveDomain.t)
   L.d_printfln_escaped
     "Eternal Infinite Loop Check: Does this implication hold?@\n  @[%a@\n?⊢?@\n%a@]"
     AbductiveDomain.pp astate_lhs AbductiveDomain.pp astate_rhs ;
-  (* TODO: it would be better to reset the "next fresh" abstract value to avoid polluting it with
-     this implication state (where we throw away all the freshly-generated variables at the end) *)
   let empty_unification =
     { astate= astate_lhs
     ; subst= AddressMap.empty
@@ -343,6 +314,8 @@ let implies (astate_lhs : AbductiveDomain.t)
     ; visited= AddressSet.empty
     ; array_indices_to_visit= [] }
   in
+  AbstractValue.throwaway_context
+  @@ fun () ->
   match unify astate_rhs empty_unification with
   | exception Contradiction contradiction ->
       L.d_printfln "Contradiction when unifying: %a" pp_contradiction contradiction ;
