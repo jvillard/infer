@@ -262,7 +262,7 @@ let test_implies_conditions phi1 phi2 =
   let phi1 = phi1 ttrue |> assert_sat in
   let phi2 = phi2 ttrue |> assert_sat in
   match implies_conditions_up_to ~subst:named_vars_id_subst phi1 ~implies:phi2 with
-  | Ok () ->
+  | Ok _ ->
       F.printf "implies conditions"
   | Error (`NotImplied (_, atom)) ->
       F.printf "Not implied atom: %a" (PulseFormulaAtom.pp_with_pp_var pp_var) atom

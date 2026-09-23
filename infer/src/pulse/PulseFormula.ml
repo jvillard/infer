@@ -907,7 +907,9 @@ module Implication : sig
        subst:Var.t Var.Map.t
     -> t
     -> implies:t
-    -> (unit, [> `Contradiction of SatUnsat.unsat_info | `NotImplied of Formula.t * Atom.t]) result
+    -> ( Var.t Var.Map.t
+       , [> `Contradiction of SatUnsat.unsat_info | `NotImplied of Formula.t * Atom.t] )
+       result
 
   val compatible_conditions : t -> t -> (unit, [> `Contradiction of SatUnsat.unsat_info]) result
 end = struct
@@ -1099,7 +1101,7 @@ end = struct
       implies_atoms phi (formula_foreign.conditions |> Atom.Map.to_seq |> Seq.map fst) ;
       L.d_printfln "implies_atoms going twice" ;
       implies_terms phi (formula_foreign.phi.term_conditions2 |> Term.Set.to_seq) ;
-      Ok ()
+      Ok !subst_map
     with
     | NotImplied (phi, atom) ->
         Error (`NotImplied (phi, atom))
