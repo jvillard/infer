@@ -65,7 +65,7 @@ void nonterm_is_not_even_call_bad(unsigned int x) {
 }
 
 /* OK: event toggle will make the loop break */
-void FP_terminate_is_even_toggle_ok(unsigned int x) {
+void terminate_is_even_toggle_ok(unsigned int x) {
   int toggle = 1;
   while ((x % 2) == 0)
     if (toggle) {
