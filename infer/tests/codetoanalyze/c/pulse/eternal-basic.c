@@ -36,9 +36,10 @@ void always_gt_zero_bad() {
   }
 }
 
-void complex_condition_always_true_bad() {
+void FN_complex_condition_always_true_bad() {
   int i = 0;
   while (i+2 > 0) {
+    // FN because of abstraction: i could be < 0
     i++;
   }
 }

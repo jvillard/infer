@@ -23,7 +23,7 @@ struct _xmlList {
 typedef struct _xmlList xmlList;
 
 /* Found in Libxml : no bug */
-int FP_xmlListSize_ok(xmlList* l) {
+int xmlListSize_ok(xmlList* l) {
   xmlLinkPtr lk;
   int count = 0;
 

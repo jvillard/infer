@@ -382,7 +382,7 @@ void loop_with_return_var3_ok(int y) {
       y++;
 }
 
-void FN_while_ge_bad() {
+void while_ge_bad() {
   int i = 0;
   while ((i >= 0) == 1)
     i++;
@@ -978,7 +978,7 @@ void no_incr_first_iterations_interproc_ok() {
   }
 }
 
-void FP_string_ok(const char* name) {
+void string_ok(const char* name) {
   unsigned hash = 31L;
   const char* ptr;
 
