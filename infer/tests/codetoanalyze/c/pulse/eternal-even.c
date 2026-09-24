@@ -296,8 +296,8 @@ void terminate_inductive_irreducible_cfg_ok() {
   }
 }
 
-/* OK: is even remains true for every array element */
-void terminate_inductive_array_ok() {
+/* OK: is even gets false for y[0] after the first iteration */
+void FP_terminate_inductive_array_ok() {
   int y[10] = {0x00};
   int i = 0;
   while ((y[i] % 2) == 0) {
