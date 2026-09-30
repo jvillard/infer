@@ -8,20 +8,20 @@
 int is_even(unsigned int x) { return ((x % 2) == 0); }
 
 /* Bad: loop may not terminate */
-void nonterm_is_even_simple_bad() {
+void FN_nonterm_is_even_simple_bad() {
   int x = 0;
   while ((x % 2) == 0)
     x += 2;
 }
 
 /* Bad: loop may not terminate (with param) */
-void nonterm_is_even_param_bad(int x) {
+void FN_nonterm_is_even_param_bad(int x) {
   while ((x % 2) == 0)
     x += 2;
 }
 
 /* Bad: loop may not terminate (with function call) */
-void nonterm_is_even_call_bad(int x) {
+void FN_nonterm_is_even_call_bad(int x) {
   while (is_even(x))
     x += 2;
 }
@@ -47,13 +47,13 @@ void terminate_is_even_simple_ok() {
 }
 
 /* Bad: may not terminate if input is odd */
-void nonterm_is_even_one_param_bad(unsigned int x) {
+void FN_nonterm_is_even_one_param_bad(unsigned int x) {
   while ((x % 2) == 1)
     x += 2;
 }
 
 /* OK: will terminate */
-void FP_terminate_is_odd_param_ok(unsigned int x) {
+void terminate_is_odd_param_ok(unsigned int x) {
   while ((x % 2) == 1)
     x += 1;
 }
@@ -130,7 +130,7 @@ void terminate_nested_seq_loop_ok(int x) {
 }
 
 /* Bad: Last loop of the function may not terminate */
-void nonterm_nested_seq_loop_bad(int x) {
+void FN_nonterm_nested_seq_loop_bad(int x) {
   while (x < 5) {
     x++;
     while (x < 6)
@@ -274,7 +274,7 @@ void FN_ossl_mod_arith_toy_bad(int p, int b, int e) {
 }
 
 /* Bad: Input for which function may not terminate: x = 9 */
-void nonterm_inductive_irreducible_cfg_bad(int x) {
+void FN_nonterm_inductive_irreducible_cfg_bad(int x) {
   while (x != 0) {
   restart:
     x++;
@@ -297,7 +297,7 @@ void terminate_inductive_irreducible_cfg_ok() {
 }
 
 /* OK: is even gets false for y[0] after the first iteration */
-void FP_terminate_inductive_array_ok() {
+void terminate_inductive_array_ok() {
   int y[10] = {0x00};
   int i = 0;
   while ((y[i] % 2) == 0) {
@@ -307,7 +307,7 @@ void FP_terminate_inductive_array_ok() {
 }
 
 /* Bad: is even remains true for every array element */
-void nonterm_inductive_array_bad() {
+void FN_nonterm_inductive_array_bad() {
   int y[10] = {0x00};
   int i = 0;
   while ((y[i] % 2) == 0) {

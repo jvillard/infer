@@ -1250,7 +1250,7 @@ end = struct
                   add_linear_eq_and_solve_new_eq_opt ~fuel new_eqs v l phi
                   >>= propagate_linear_eq ~fuel v l )
           | Some l' when not (LinArith.equal l l') ->
-              (* This is the only step that consumes fuel: discovering an equality [l = l']: because we
+              (* Thi is the only step that consumes fuel: discovering an equality [l = l']: because we
                    do not record these anywhere (except when their consequence can be recorded as [y =
                    l''] or [y = y']), we could potentially discover the same equality over and over and
                    diverge otherwise. Or could we?) *)
@@ -1431,7 +1431,6 @@ end = struct
               and if [v_new = l_new] was known we add [l_old = l_new] *)
         let v_new = (v_new :> Var.t) in
         Debug.p "new eq: %a->%a@\n" Var.pp v_old Var.pp v_new ;
-        L.d_printfln "new eq: %a = %a" Var.pp v_old Var.pp v_new ;
         let new_eqs = RevList.cons (Equal (v_old, v_new)) new_eqs in
         (* substitute [v_old -> v_new] in [phi.linear_eqs] while maintaining the [linear_eqs]
               invariant *)

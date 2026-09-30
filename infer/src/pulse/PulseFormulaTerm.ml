@@ -732,12 +732,12 @@ let simplify_shallow t =
             match Q.to_bigint q with Some z -> Some (t, z) | None -> None )
         in
         match (is_t1_var_plus_int, Q.to_bigint m) with
-        | Some (t, z), Some m -> (
+        | Some (t_var, z), Some m -> (
           match Z.(z mod m) with
           | Some z_simpl when Z.(equal z_simpl zero) ->
-              Mod (t, t2)
+              Mod (t_var, t2)
           | Some z_simpl when Z.(not (equal z z_simpl)) ->
-              Mod (Add (t, Const (Q.of_bigint z_simpl)), t2)
+              Mod (Add (t_var, Const (Q.of_bigint z_simpl)), t2)
           | _ ->
               t )
         | _ ->

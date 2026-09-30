@@ -1098,10 +1098,34 @@ end = struct
             in
             phi )
       in
-      (* try to imply each atom in the conditions *)
-      L.d_printfln_escaped "implies_atoms going once on @[%a@]" (Formula.pp_with_pp_var Var.pp) phi ;
+      (* try to imply each fact on the RHS *)
+      L.d_printfln_escaped "implies_atoms on the terms of the RHS from @[%a@]"
+        (Formula.pp_with_pp_var Var.pp) phi ;
+      implies_atoms phi
+        (Iter.to_seq_persistent (fun f ->
+             Formula.term_eqs_iter (fun t v -> f (Atom.Equal (t, Var v))) formula_foreign.phi ) ) ;
+      (* checking that we imply the RHS' [term_eqs] also takes care of most of the other components
+         of the RHS as they are represented in [term_eqs]:
+
+         - [var_eqs] (because no variables in there matters except the canonical ones)
+         - [const_eqs] (inverse represented in [term_eqs])
+         - [const_eqs] (inverse represented in [term_eqs])
+         - [linear_eqs] (inverse represented in [term_eqs])
+         - [tableau] (inverse represented in [term_eqs])
+         - [interval] (inverse represented in [term_eqs])
+
+         The only missing part is [formula_foreign.atoms]. We give up on these and accept
+         unsoundness (i.e. potentially reporting FPs) because we are too incomplete on non-linear
+         reasoning to detect useful bugs. That said TODO: we could still insist on implying [atoms]
+         but we need to get rid of common incompleteness such as around trivial-ish atoms like
+         [is_int(t, _) = 1].
+
+         Note that some atoms are represented in [conditions] and we do check these, at least. *)
+      (* L.d_printfln_escaped "implies_atoms on the RHS atoms" ;
+         implies_atoms phi (Atom.Set.to_seq formula_foreign.phi.atoms) ; *)
+      L.d_printfln_escaped "implies_atoms going once on conditions" ;
       implies_atoms phi (formula_foreign.conditions |> Atom.Map.to_seq |> Seq.map fst) ;
-      L.d_printfln "implies_atoms going twice" ;
+      L.d_printfln "implies_terms going twice on term_conditions2" ;
       implies_terms phi (formula_foreign.phi.term_conditions2 |> Term.Set.to_seq) ;
       Ok !subst_map
     with

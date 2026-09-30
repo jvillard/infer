@@ -382,13 +382,13 @@ void loop_with_return_var3_ok(int y) {
       y++;
 }
 
-void while_ge_bad() {
+void FN_while_ge_bad() {
   int i = 0;
   while ((i >= 0) == 1)
     i++;
 }
 
-void while_even_bad() {
+void FN_while_even_bad() {
   int i = 0;
   while (i % 2 == 0)
     i = i + 2;
@@ -887,7 +887,7 @@ void FN_goto_in_loop_bad() {
   }
 }
 
-void goto_in_loop_without_eqtest_bad() {
+void FN_goto_in_loop_without_eqtest_bad() {
   int i = 0;
   int j = 0;
   while (i < 10) {
