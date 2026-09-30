@@ -978,31 +978,32 @@ end = struct
       && Iter.for_all (fun v_t' -> Var.Set.mem v_t' ground_vars || Var.Set.mem v_t' new_vars)
          @@ Iter.from_labelled_iter (Term.iter_variables t')
     in
-    let collect_new_binding ground_vars t v (new_vars, bindings) =
-      let v' = subst v in
-      let t' = Term.subst_variables ~f:f_subst t in
-      match is_linear_with_one_non_ground_var ground_vars new_vars t' v' with
-      | Some v_newly_ground ->
-          (Var.Set.add v_newly_ground new_vars, (t', v') :: bindings)
-      | None when is_ground_term_to_non_ground_var ground_vars new_vars t' v' ->
-          (Var.Set.add v' new_vars, (t', v') :: bindings)
-      | None ->
-          (new_vars, bindings)
-    in
-    let collect_new_bindings ground_vars phi_foreign new_vars_bindings =
-      Formula.term_eqs_fold (collect_new_binding ground_vars) phi_foreign new_vars_bindings
-    in
-    let collect_bindings subst phi_foreign =
-      let rec collect phi_foreign (ground_vars, bindings) =
-        let new_vars, bindings =
-          collect_new_bindings ground_vars phi_foreign (Var.Set.empty, bindings)
+    let collect_bindings subst0 phi0 phi_foreign =
+      let collect_new_bindings ground_vars phi_foreign new_vars_bindings =
+        let collect_new_binding ground_vars t v (new_vars, bindings) =
+          let v' = subst v in
+          let t' = Term.subst_variables ~f:f_subst t in
+          match is_linear_with_one_non_ground_var ground_vars new_vars t' v' with
+          | Some v_newly_ground ->
+              (Var.Set.add v_newly_ground new_vars, (t', v') :: bindings)
+          | None when is_ground_term_to_non_ground_var ground_vars new_vars t' v' ->
+              (Var.Set.add v' new_vars, (t', v') :: bindings)
+          | None ->
+              (new_vars, bindings)
         in
+        Formula.term_eqs_fold (collect_new_binding ground_vars) phi_foreign new_vars_bindings
+      in
+      let rec collect phi (ground_vars, bindings) =
+        let new_vars, bindings = collect_new_bindings ground_vars phi (Var.Set.empty, bindings) in
         if Var.Set.is_empty new_vars then (ground_vars, bindings)
         else
           let ground_vars = Var.Set.union ground_vars new_vars in
-          collect phi_foreign (ground_vars, bindings)
+          collect phi (ground_vars, bindings)
       in
-      let ground_vars = subst |> Var.Map.to_seq |> Seq.map fst |> Var.Set.of_seq in
+      let ground_vars =
+        let init = subst0 |> Var.Map.to_seq |> Seq.map fst |> Var.Set.of_seq in
+        Formula.fold_variables phi0 ~init ~f:(fun vars v -> Var.Set.add v vars)
+      in
       collect phi_foreign (ground_vars, [])
     in
     (* HEURISTIC: all RHS atoms that transitively relate RHS variables that have been unified to
@@ -1087,17 +1088,18 @@ end = struct
     in
     try
       (* first use the HEURISTIC above to add some of the formula as facts *)
-      let ground, bindings = collect_bindings subst0 formula_foreign.phi in
+      let ground, bindings = collect_bindings subst0 formula0.phi formula_foreign.phi in
       debug_pp_sequent formula0 (ground, !subst_map) formula_foreign ;
       let phi =
         List.fold bindings ~init:formula0.phi ~f:(fun phi (t, v) ->
+            L.d_printfln_escaped "solver adding %a = %a to the LHS" (Term.pp Var.pp) t Var.pp v ;
             let phi, _new_eqs =
               Formula.Normalizer.and_var_term v t (phi, RevList.empty) |> sat_value_exn
             in
             phi )
       in
       (* try to imply each atom in the conditions *)
-      L.d_printfln "implies_atoms going once on @[%a@]" (Formula.pp_with_pp_var Var.pp) phi ;
+      L.d_printfln_escaped "implies_atoms going once on @[%a@]" (Formula.pp_with_pp_var Var.pp) phi ;
       implies_atoms phi (formula_foreign.conditions |> Atom.Map.to_seq |> Seq.map fst) ;
       L.d_printfln "implies_atoms going twice" ;
       implies_terms phi (formula_foreign.phi.term_conditions2 |> Term.Set.to_seq) ;

@@ -53,7 +53,7 @@ void nonterm_is_even_one_param_bad(unsigned int x) {
 }
 
 /* OK: will terminate */
-void terminate_is_odd_param_ok(unsigned int x) {
+void FP_terminate_is_odd_param_ok(unsigned int x) {
   while ((x % 2) == 1)
     x += 1;
 }
@@ -274,7 +274,7 @@ void FN_ossl_mod_arith_toy_bad(int p, int b, int e) {
 }
 
 /* Bad: Input for which function may not terminate: x = 9 */
-void FN_nonterm_inductive_irreducible_cfg_bad(int x) {
+void nonterm_inductive_irreducible_cfg_bad(int x) {
   while (x != 0) {
   restart:
     x++;
