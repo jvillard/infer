@@ -8,20 +8,20 @@
 int is_even(unsigned int x) { return ((x % 2) == 0); }
 
 /* Bad: loop may not terminate */
-void FN_nonterm_is_even_simple_bad() {
+void nonterm_is_even_simple_bad() {
   int x = 0;
   while ((x % 2) == 0)
     x += 2;
 }
 
 /* Bad: loop may not terminate (with param) */
-void FN_nonterm_is_even_param_bad(int x) {
+void nonterm_is_even_param_bad(int x) {
   while ((x % 2) == 0)
     x += 2;
 }
 
 /* Bad: loop may not terminate (with function call) */
-void FN_nonterm_is_even_call_bad(int x) {
+void nonterm_is_even_call_bad(int x) {
   while (is_even(x))
     x += 2;
 }
@@ -47,7 +47,7 @@ void terminate_is_even_simple_ok() {
 }
 
 /* Bad: may not terminate if input is odd */
-void FN_nonterm_is_even_one_param_bad(unsigned int x) {
+void nonterm_is_even_one_param_bad(unsigned int x) {
   while ((x % 2) == 1)
     x += 2;
 }
@@ -130,7 +130,7 @@ void terminate_nested_seq_loop_ok(int x) {
 }
 
 /* Bad: Last loop of the function may not terminate */
-void FN_nonterm_nested_seq_loop_bad(int x) {
+void nonterm_nested_seq_loop_bad(int x) {
   while (x < 5) {
     x++;
     while (x < 6)

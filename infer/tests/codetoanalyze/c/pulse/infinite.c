@@ -388,7 +388,7 @@ void FN_while_ge_bad() {
     i++;
 }
 
-void FN_while_even_bad() {
+void while_even_bad() {
   int i = 0;
   while (i % 2 == 0)
     i = i + 2;
@@ -590,7 +590,6 @@ void benchmark_simple_cook06_ok() {
 
 /* Simple non-det benchmark for non-terminate */
 /* Inspired by cook'06 by flipping existing test benchmark_simple_ok_cook06 */
-/* pulse-inf: works good! flag the bug */
 void FN_nondet_loop_bad(int z) {
   int x = 1;
   while (x < z)
@@ -634,7 +633,6 @@ void interproc_terminating_harris10_cond_ok(int x) {
  * program */
 /* TERMINATOR unable to find bug */
 /* TREX find bug in 5sec */
-/* pulse-inf: used to detect the bug! */
 void FN_loop_non_terminating_harris10_bad(int x, int d, int z) {
   d = 0;
   z = 0;
@@ -646,7 +644,6 @@ void FN_loop_non_terminating_harris10_bad(int x, int d, int z) {
 
 /*** Chen et al. TACAS 2014 */
 // TNT proves non-termination with non determinism
-/* Pulse-inf: works good (also flag the bug) */
 /* TO me: there is no bug here! problem in chen14 paper - the nondet() should
  * eventually make it break */
 // #include <stdlib.h>
@@ -861,7 +858,6 @@ void simple_loop_equal_bad() {
 
 int compute_increment(int k) { return (k % 2 ? 1 : 0); }
 
-/* Pulse-Inf: OK! Find bug */
 void FN_loop_fcall_add_inductive_bad() {
   int i;
   int incr;

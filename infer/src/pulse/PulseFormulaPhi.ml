@@ -1210,6 +1210,27 @@ end = struct
     Atom.eval ~is_neq_zero:(is_neq_zero phi) atom'
 
 
+  let recover_completeness_on_new_atom (atom : Atom.t) (phi, new_eqs) =
+    match atom with
+    | LessEqual _ | LessThan _ | Equal _ ->
+        Sat (phi, new_eqs)
+    | NotEqual (t1, t2) ->
+        (* HACK: terms are stored maximally unfolded, but disequalities sometimes require folding
+           terms to discover contradictions of the form [x≠x]. For example in the case of a
+           non-linear disequality [t≠x] (e.g. [v1 mod 12 ≠ x]) where we known [t=x] from [term_eqs]
+           then we want to "fold" [t] into [x] (because of [t=x]) to detect [x≠x].  *)
+        let t1' = match get_term_eq phi t1 with Some v1 -> Term.Var v1 | None -> t1 in
+        let t2' = match get_term_eq phi t2 with Some v2 -> Term.Var v2 | None -> t2 in
+        if Term.equal_syntax t1' t2' then
+          Unsat
+            { reason=
+                (fun () ->
+                  F.asprintf "atom %a is equal to syntactically UNSAT %a≠%a"
+                    (Atom.pp_with_pp_var Var.pp) atom (Term.pp Var.pp) t1' (Term.pp Var.pp) t2' )
+            ; source= __POS__ }
+        else Sat (phi, new_eqs)
+
+
   (** add [l1 = l2] to [phi.linear_eqs] and resolves consequences of that new fact
 
       [l1] and [l2] should have already been through {!normalize_linear} (w.r.t. [phi]) *)
@@ -1812,9 +1833,8 @@ end = struct
             if Atom.Set.mem atom phi.atoms then
               let phi = remove_atom atom phi in
               and_atom ~fuel ~add_term:false
-                (Atom.subst_variables
-                   ~f:(fun x' -> if Var.equal x' x then subst_target_x else VarSubst x')
-                   atom )
+                (Atom.subst_variables atom ~f:(fun x' ->
+                     if Var.equal x' x then subst_target_x else VarSubst x' ) )
                 (phi, new_eqs)
               >>| snd
             else phi_new_eqs_sat )
@@ -1944,37 +1964,38 @@ end = struct
 
   (** return [(new_linear_equalities, phi ∧ atom)], where [new_linear_equalities] is [true] if
       [phi.linear_eqs] was changed as a result *)
-  and and_normalized_atom ~fuel (phi, new_eqs) atom =
+  and and_normalized_atom ~fuel (phi, new_eqs) (atom : Atom.t) =
     match Atom.var_terms_to_linear atom with
-    | Atom.Equal (Linear _, Linear _) ->
+    | Equal (Linear _, Linear _) ->
         assert false
-    | Atom.Equal (Linear l, Const c) | Atom.Equal (Const c, Linear l) ->
+    | Equal (Linear l, Const c) | Equal (Const c, Linear l) ->
         (* NOTE: {!normalize_atom} calls {!Atom.eval}, which normalizes linear equalities so
               they end up only on one side, hence only this match case is needed to detect linear
               equalities *)
         let+ phi', new_eqs = solve_lin_eq ~fuel new_eqs l (LinArith.of_q c) phi in
         (true, (phi', new_eqs))
-    | (Atom.Equal (Linear l, t) | Atom.Equal (t, Linear l))
-      when Option.is_some (LinArith.get_as_var l) ->
+    | (Atom.Equal (Linear l, t) | Equal (t, Linear l)) when Option.is_some (LinArith.get_as_var l)
+      ->
         let v = Option.value_exn (LinArith.get_as_var l) in
         let+ phi_new_eqs' = solve_normalized_term_eq ~fuel new_eqs t v phi in
         (false, phi_new_eqs')
-    | Atom.LessEqual (Linear l, Const c) ->
+    | LessEqual (Linear l, Const c) ->
         let+ phi', new_eqs = solve_lin_ineq ~fuel new_eqs l (LinArith.of_q c) phi in
         (true, (phi', new_eqs))
-    | Atom.LessEqual (Const c, Linear l) ->
+    | LessEqual (Const c, Linear l) ->
         let+ phi', new_eqs = solve_lin_ineq ~fuel new_eqs (LinArith.of_q c) l phi in
         (true, (phi', new_eqs))
-    | Atom.LessThan (Linear l, Const c) ->
+    | LessThan (Linear l, Const c) ->
         let+ phi', new_eqs = solve_lin_ineq ~fuel new_eqs l (LinArith.of_q (Q.sub c Q.one)) phi in
         (true, (phi', new_eqs))
-    | Atom.LessThan (Const c, Linear l) ->
+    | LessThan (Const c, Linear l) ->
         let+ phi', new_eqs = solve_lin_ineq ~fuel new_eqs (LinArith.of_q (Q.add c Q.one)) l phi in
         (true, (phi', new_eqs))
     | atom' ->
         (* the previous normalization has "simplified" [Var] terms into [Linear] ones, revert
               this *)
         let atom = Atom.simplify_linear atom' in
+        let* phi, new_eqs = recover_completeness_on_new_atom atom (phi, new_eqs) in
         let+ phi_new_eqs = (add_atom atom phi, new_eqs) |> propagate_atom ~fuel atom in
         (false, phi_new_eqs)
 
